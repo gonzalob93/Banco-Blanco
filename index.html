@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Banco Blanco – Banca Privada</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    :root{
+      --red:#db0011;--red2:#f5000f;--red3:#fce8ea;
+      --navy:#1a1a1a;--gray:#f5f5f5;--gray2:#e8e8e8;--gray3:#cccccc;
+      --text:#1a1a1a;--text2:#4a4a4a;--text3:#888888;
+      --white:#ffffff;--green:#2e7d32;--green-bg:#e8f5e9;
+      --amber:#b45309;--amber-bg:#fef3c7;
+      --blue:#1565c0;--blue-bg:#e3f2fd;
+    }
+    body{font-family:'Arial',sans-serif;background:var(--gray);color:var(--text);min-height:100vh;}
+    input,button,select{font-family:'Arial',sans-serif;}
+    .screen{display:none;min-height:100vh;}
+    .screen.active{display:flex;flex-direction:column;}
+    #screen-login{align-items:center;justify-content:center;background:#1a1a1a;padding:2rem;}
+    .login-wrap{display:flex;width:100%;max-width:820px;border-radius:20px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,0.4);}
+    .login-side{background:var(--red);padding:2.5rem;width:230px;flex-shrink:0;display:flex;flex-direction:column;justify-content:space-between;}
+    .login-side-top{display:flex;flex-direction:column;gap:20px;}
+    .login-side-logo h1{color:#fff;font-size:22px;font-weight:900;line-height:1.1;}
+    .login-side-logo p{color:rgba(255,255,255,0.7);font-size:10px;letter-spacing:2px;margin-top:4px;}
+    .login-side-tagline{font-size:12px;color:rgba(255,255,255,0.8);line-height:1.6;}
+    .login-card{background:#fff;padding:2.5rem;flex:1;}
+    .login-card-title{font-size:20px;font-weight:700;color:var(--navy);margin-bottom:.25rem;}
+    .login-card-sub{font-size:13px;color:var(--text3);margin-bottom:1.75rem;}
+    .tabs{display:flex;border-bottom:2px solid var(--gray2);margin-bottom:1.5rem;}
+    .tab{flex:1;padding:9px 0;border:none;background:transparent;color:var(--text3);font-size:13px;cursor:pointer;font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;}
+    .tab.active{color:var(--red);border-bottom-color:var(--red);}
+    .form-group{margin-bottom:1rem;}
+    .form-group label{display:block;font-size:11px;color:var(--text2);letter-spacing:.8px;font-weight:700;margin-bottom:6px;}
+    .form-group input,.form-group select{width:100%;padding:11px 14px;background:var(--gray);border:1.5px solid var(--gray2);border-radius:8px;color:var(--text);font-size:14px;outline:none;transition:border-color .2s;}
+    .form-group input:focus,.form-group select:focus{border-color:var(--red);background:#fff;}
+    .btn-primary{width:100%;padding:13px;background:var(--red);border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;margin-top:.5rem;}
+    .btn-primary:hover{background:var(--red2);}
+    .btn-primary:active{transform:scale(.98);}
+    .error-msg{background:#fce8ea;color:#a80009;border:1px solid #f5b3b8;padding:10px 14px;border-radius:8px;font-size:12px;margin-top:.75rem;text-align:center;display:none;}
+    .error-msg.show{display:block;}
+    .success-msg{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;padding:10px 14px;border-radius:8px;font-size:12px;margin-top:.75rem;text-align:center;display:none;}
+    .success-msg.show{display:block;}
+    .topbar{background:var(--red);padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;height:58px;flex-shrink:0;}
+    .topbar-logo-wrap{display:flex;align-items:center;gap:10px;}
+    .topbar-name-brand{color:#fff;font-size:14px;font-weight:700;}
+    .topbar-user{display:flex;align-items:center;gap:12px;}
+    .user-avatar{width:34px;height:34px;background:rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;font-weight:700;flex-shrink:0;}
+    .user-name-top{font-size:13px;color:rgba(255,255,255,.85);}
+    .btn-logout{padding:6px 14px;background:transparent;border:1px solid rgba(255,255,255,.35);border-radius:6px;color:rgba(255,255,255,.85);font-size:12px;cursor:pointer;transition:all .2s;}
+    .btn-logout:hover{border-color:#fff;color:#fff;}
+    .badge-admin{background:#fff;color:var(--red);font-size:9px;padding:2px 7px;border-radius:10px;font-weight:700;letter-spacing:1px;margin-left:6px;}
+    .user-nav{display:flex;border-bottom:2px solid var(--gray2);background:#fff;padding:0 1.5rem;overflow-x:auto;}
+    .user-nav-tab{padding:12px 14px;border:none;background:transparent;color:var(--text3);font-size:13px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;font-weight:600;white-space:nowrap;}
+    .user-nav-tab.active{color:var(--red);border-bottom-color:var(--red);}
+    #screen-dashboard{background:var(--gray);}
+    .dash-content{padding:1.5rem;flex:1;max-width:740px;margin:0 auto;width:100%;}
+    .balances-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem;}
+    .balance-card{background:var(--navy);border-radius:16px;padding:1.5rem 1.75rem;display:flex;align-items:center;justify-content:space-between;}
+    .balance-card.usd-card{background:#0d3b6e;}
+    .balance-label{font-size:10px;color:rgba(255,255,255,.5);letter-spacing:2px;font-weight:700;margin-bottom:6px;}
+    .balance-amount{font-size:28px;color:#fff;font-weight:700;line-height:1;}
+    .balance-account{font-size:11px;color:rgba(255,255,255,.4);margin-top:5px;}
+    .balance-pill{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:.5px;}
+    .pill-ars{background:var(--red);color:#fff;}
+    .pill-usd{background:#1976d2;color:#fff;}
+    .usd-closed-banner{background:var(--blue-bg);border:1.5px solid #90caf9;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+    .usd-closed-banner p{font-size:13px;color:var(--blue);font-weight:600;}
+    .btn-open-usd{padding:8px 16px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+    .btn-open-usd:hover{background:#1976d2;}
+    .fx-strip{background:#fff;border:1.5px solid var(--gray2);border-radius:10px;padding:.75rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
+    .fx-item{font-size:12px;color:var(--text2);}
+    .fx-item strong{font-size:14px;color:var(--navy);}
+    .fx-sep{width:1px;height:24px;background:var(--gray2);}
+    .section-title{font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1.5px;margin-bottom:.75rem;}
+    .actions-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.25rem;}
+    .action-card{background:#fff;border:1.5px solid var(--gray2);border-radius:12px;padding:.9rem 1rem;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:10px;}
+    .action-card:hover{border-color:var(--red);box-shadow:0 2px 12px rgba(219,0,17,.1);}
+    .action-card.blue-card:hover{border-color:var(--blue);box-shadow:0 2px 12px rgba(21,101,192,.1);}
+    .action-icon{width:34px;height:34px;border-radius:9px;background:var(--red3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--red);font-weight:700;}
+    .action-icon.blue{background:var(--blue-bg);color:var(--blue);}
+    .action-icon.amber{background:var(--amber-bg);color:var(--amber);}
+    .action-text .action-title{font-size:13px;color:var(--text);font-weight:700;}
+    .action-text .action-desc{font-size:10px;color:var(--text3);margin-top:1px;}
+    .card-box{background:#fff;border:1.5px solid var(--gray2);border-radius:12px;overflow:hidden;margin-bottom:1.25rem;}
+    .tx-item{display:flex;align-items:center;justify-content:space-between;padding:.8rem 1.25rem;border-bottom:1px solid var(--gray2);transition:background .15s;}
+    .tx-item:last-child{border-bottom:none;}
+    .tx-item:hover{background:var(--gray);}
+    .tx-left{display:flex;align-items:center;gap:12px;}
+    .tx-icon{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;font-weight:700;}
+    .tx-icon.credit{background:#e8f5e9;color:var(--green);}
+    .tx-icon.debit{background:var(--red3);color:var(--red);}
+    .tx-icon.fx{background:var(--blue-bg);color:var(--blue);}
+    .tx-desc{font-size:13px;color:var(--text);font-weight:600;}
+    .tx-date{font-size:11px;color:var(--text3);margin-top:1px;}
+    .tx-amount{font-size:14px;font-weight:700;}
+    .tx-amount.credit{color:var(--green);}
+    .tx-amount.debit{color:var(--red);}
+    .tx-amount.fx{color:var(--blue);}
+    .empty-state{text-align:center;padding:2rem;color:var(--text3);font-size:13px;}
+    .producto-item{padding:.9rem 1.25rem;border-bottom:1px solid var(--gray2);display:flex;align-items:center;justify-content:space-between;}
+    .producto-item:last-child{border-bottom:none;}
+    .producto-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px;}
+    .badge-prestamo{background:var(--amber-bg);color:var(--amber);}
+    .badge-plazo{background:#e8f5e9;color:var(--green);}
+    .badge-vencido{background:var(--red3);color:var(--red);}
+    .prod-info{flex:1;}
+    .prod-title{font-size:13px;font-weight:700;color:var(--text);}
+    .prod-detail{font-size:11px;color:var(--text3);margin-top:2px;}
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center;padding:1rem;}
+    .modal-overlay.open{display:flex;}
+    .modal{background:#fff;border-radius:16px;padding:2rem;width:100%;max-width:440px;max-height:90vh;overflow-y:auto;}
+    .modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;}
+    .modal-title{font-size:17px;color:var(--navy);font-weight:700;}
+    .modal-close{width:28px;height:28px;background:var(--gray2);border:none;border-radius:6px;color:var(--text2);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;}
+    .modal-close:hover{background:var(--gray3);}
+    .simulacion-box{background:var(--gray);border-radius:10px;padding:1rem;margin:1rem 0;font-size:13px;}
+    .sim-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--gray2);}
+    .sim-row:last-child{border-bottom:none;font-weight:700;font-size:14px;}
+    .sim-label{color:var(--text2);}
+    .sim-value{color:var(--text);font-weight:600;}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .fx-info-box{background:var(--blue-bg);border-radius:10px;padding:.9rem 1rem;margin-bottom:1rem;font-size:12px;color:var(--blue);}
+    .fx-info-box strong{display:block;font-size:14px;margin-bottom:4px;}
+    #screen-admin{background:var(--gray);}
+    .admin-content{padding:1.5rem;flex:1;max-width:980px;margin:0 auto;width:100%;}
+    .admin-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.25rem;}
+    .stat-card{background:#fff;border:1.5px solid var(--gray2);border-radius:12px;padding:1.1rem;}
+    .stat-value{font-size:20px;color:var(--navy);font-weight:800;margin-bottom:3px;}
+    .stat-label{font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1px;}
+    .stat-accent{color:var(--red);}
+    .stat-blue{color:var(--blue);}
+    .users-table{background:#fff;border:1.5px solid var(--gray2);border-radius:12px;overflow:hidden;margin-bottom:1.25rem;}
+    .table-header{padding:.9rem 1.25rem;border-bottom:1.5px solid var(--gray2);}
+    .admin-table{width:100%;border-collapse:collapse;}
+    .admin-table th{padding:.65rem 1rem;text-align:left;font-size:10px;color:var(--text3);letter-spacing:1px;font-weight:700;border-bottom:1.5px solid var(--gray2);background:var(--gray);}
+    .admin-table td{padding:.7rem 1rem;font-size:12px;color:var(--text);border-bottom:1px solid var(--gray2);vertical-align:middle;}
+    .admin-table tr:last-child td{border-bottom:none;}
+    .admin-table tr:hover td{background:var(--gray);}
+    .btn-sm{padding:4px 9px;border-radius:6px;font-size:11px;cursor:pointer;border:none;font-weight:700;transition:all .15s;}
+    .btn-add{background:#e8f5e9;color:var(--green);}
+    .btn-add:hover{background:#c8e6c9;}
+    .btn-sub{background:var(--red3);color:var(--red);}
+    .btn-sub:hover{background:#f5c6cb;}
+    .btn-add-blue{background:var(--blue-bg);color:var(--blue);}
+    .btn-add-blue:hover{background:#bbdefb;}
+    .btn-sub-blue{background:#e8eaf6;color:#283593;}
+    .btn-sub-blue:hover{background:#c5cae9;}
+    .btn-delete{background:var(--navy);color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;border:none;font-weight:700;}
+    .btn-delete:hover{background:#333;}
+    .nav-tabs{display:flex;border-bottom:2px solid var(--gray2);background:#fff;padding:0 1.5rem;overflow-x:auto;}
+    .nav-tab{padding:12px 14px;border:none;background:transparent;color:var(--text3);font-size:13px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;font-weight:600;white-space:nowrap;}
+    .nav-tab.active{color:var(--red);border-bottom-color:var(--red);}
+    .admin-tx-item{display:flex;align-items:center;justify-content:space-between;padding:.8rem 1.25rem;border-bottom:1px solid var(--gray2);}
+    .admin-tx-item:last-child{border-bottom:none;}
+    .admin-tx-item:hover{background:var(--gray);}
+    .amount-input-row{display:flex;gap:4px;align-items:center;flex-wrap:wrap;}
+    .amount-input-row input{width:68px;padding:4px 7px;background:var(--gray);border:1.5px solid var(--gray2);border-radius:6px;color:var(--text);font-size:11px;outline:none;}
+    .amount-input-row input:focus{border-color:var(--red);}
+    .tasa-row{display:flex;align-items:center;gap:8px;background:var(--gray);border-radius:8px;padding:.75rem 1rem;margin-bottom:.75rem;}
+    .tasa-row label{font-size:12px;font-weight:700;color:var(--text2);flex:1;}
+    .tasa-row input{width:80px;padding:5px 8px;background:#fff;border:1.5px solid var(--gray2);border-radius:6px;font-size:13px;color:var(--text);outline:none;text-align:center;}
+    .tasa-row input:focus{border-color:var(--red);}
+    .tasa-row .unit{font-size:12px;color:var(--text3);}
+    .tasa-save-btn{padding:8px 16px;background:var(--red);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-top:.5rem;}
+    .tasa-save-btn:hover{background:var(--red2);}
+    .section-divider{height:1px;background:var(--gray2);margin:1rem 0;}
+    .confirm-modal{background:#fff;border-radius:16px;padding:2rem;width:100%;max-width:360px;text-align:center;}
+    .confirm-icon{width:52px;height:52px;background:var(--red3);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:20px;color:var(--red);}
+    .confirm-title{font-size:17px;font-weight:700;color:var(--navy);margin-bottom:.5rem;}
+    .confirm-desc{font-size:13px;color:var(--text3);line-height:1.5;margin-bottom:1.5rem;}
+    .confirm-actions{display:flex;gap:10px;}
+    .btn-cancel{flex:1;padding:11px;background:var(--gray2);border:none;border-radius:8px;color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;}
+    .btn-cancel:hover{background:var(--gray3);}
+    .btn-confirm-delete{flex:1;padding:11px;background:var(--red);border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;}
+    .btn-confirm-delete:hover{background:var(--red2);}
+    .notification{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--navy);color:#fff;border-radius:10px;padding:12px 18px;font-size:13px;z-index:200;transition:all .3s;transform:translateY(20px);opacity:0;max-width:320px;font-weight:600;}
+    .notification.show{transform:translateY(0);opacity:1;}
+    .notification.success{border-left:4px solid var(--green);}
+    .notification.error{border-left:4px solid var(--red);}
+    .notification.warn{border-left:4px solid var(--amber);}
+    .notification.info{border-left:4px solid var(--blue);}
+    @media(max-width:600px){
+      .login-side{display:none;}
+      .balances-row{grid-template-columns:1fr;}
+      .actions-grid{grid-template-columns:1fr 1fr;}
+      .admin-grid{grid-template-columns:1fr 1fr;}
+      .two-col{grid-template-columns:1fr;}
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════════════════════════════════ LOGIN ══ -->
+  <div id="screen-login" class="screen active">
+    <div class="login-wrap">
+      <div class="login-side">
+        <div class="login-side-top">
+          <div class="login-side-logo"><h1>Banco<br>Blanco</h1><p>BANCA PRIVADA</p></div>
+          <svg width="80" height="80" viewBox="0 0 80 80"><circle cx="40" cy="40" r="40" fill="rgba(255,255,255,0.15)"/><rect x="16" y="37" width="48" height="6" rx="3" fill="white"/><rect x="16" y="27" width="48" height="6" rx="3" fill="rgba(255,255,255,0.45)"/><rect x="16" y="47" width="48" height="6" rx="3" fill="rgba(255,255,255,0.45)"/><rect x="16" y="17" width="48" height="6" rx="3" fill="rgba(255,255,255,0.2)"/><rect x="16" y="57" width="48" height="6" rx="3" fill="rgba(255,255,255,0.2)"/></svg>
+        </div>
+        <div class="login-side-tagline">Tu dinero, siempre seguro y disponible.</div>
+      </div>
+      <div class="login-card">
+        <div class="login-card-title">Bienvenido</div>
+        <div class="login-card-sub">Ingresá a tu cuenta o creá una nueva.</div>
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('login')">Ingresar</button>
+          <button class="tab" onclick="switchTab('register')">Crear cuenta</button>
+        </div>
+        <div id="tab-login">
+          <div class="form-group"><label>USUARIO</label><input type="text" id="login-user" placeholder="Tu nombre de usuario" autocomplete="username"/></div>
+          <div class="form-group"><label>CONTRASEÑA</label><input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+          <div id="login-error" class="error-msg">Usuario o contraseña incorrectos.</div>
+          <button class="btn-primary" onclick="doLogin()">INGRESAR</button>
+        </div>
+        <div id="tab-register" style="display:none">
+          <div class="form-group"><label>NOMBRE COMPLETO</label><input type="text" id="reg-name" placeholder="Ej: María García"/></div>
+          <div class="form-group"><label>USUARIO</label><input type="text" id="reg-user" placeholder="Sin espacios"/></div>
+          <div class="form-group"><label>CONTRASEÑA</label><input type="password" id="reg-pass" placeholder="Mínimo 4 caracteres"/></div>
+          <div id="reg-error" class="error-msg"></div>
+          <div id="reg-success" class="success-msg">¡Cuenta creada! Ya podés ingresar.</div>
+          <button class="btn-primary" onclick="doRegister()">CREAR CUENTA</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════ DASHBOARD ══ -->
+  <div id="screen-dashboard" class="screen">
+    <div class="topbar">
+      <div class="topbar-logo-wrap">
+        <svg width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="15" r="15" fill="rgba(255,255,255,0.2)"/><rect x="6" y="13" width="18" height="3.5" rx="1.75" fill="white"/><rect x="6" y="8.5" width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.5)"/><rect x="6" y="17.5" width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.5)"/><rect x="6" y="4" width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.22)"/><rect x="6" y="22" width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.22)"/></svg>
+        <span class="topbar-name-brand">Banco Blanco</span>
+      </div>
+      <div class="topbar-user">
+        <div class="user-avatar" id="topbar-avatar"></div>
+        <span class="user-name-top" id="topbar-uname"></span>
+        <button class="btn-logout" onclick="doLogout()">Salir</button>
+      </div>
+    </div>
+    <div class="user-nav">
+      <button class="user-nav-tab active" onclick="userTab('home')">Inicio</button>
+      <button class="user-nav-tab" onclick="userTab('divisas')">Cuenta USD</button>
+      <button class="user-nav-tab" onclick="userTab('prestamos')">Préstamos</button>
+      <button class="user-nav-tab" onclick="userTab('plazos')">Plazos Fijos</button>
+    </div>
+    <div class="dash-content">
+      <!-- HOME -->
+      <div id="utab-home">
+        <div class="balances-row">
+          <div class="balance-card">
+            <div><div class="balance-label">SALDO EN PESOS</div><div class="balance-amount" id="dash-balance-ars">$ 0</div><div class="balance-account">Cuenta corriente · Nº <span id="dash-accnum"></span></div></div>
+            <div><div class="balance-pill pill-ars">ARS</div></div>
+          </div>
+          <div class="balance-card usd-card">
+            <div><div class="balance-label">SALDO EN DÓLARES</div><div class="balance-amount" id="dash-balance-usd">—</div><div class="balance-account" id="usd-account-label"></div></div>
+            <div><div class="balance-pill pill-usd">USD</div></div>
+          </div>
+        </div>
+        <div class="fx-strip">
+          <div class="fx-item">TC Comprador (banco compra / vos vendés): <strong><span id="fx-compra-strip"></span></strong></div>
+          <div class="fx-sep"></div>
+          <div class="fx-item">TC Vendedor (banco vende / vos comprás): <strong><span id="fx-venta-strip"></span></strong></div>
+          <div class="fx-sep"></div>
+          <div class="fx-item" style="color:var(--text3);font-size:11px;" id="today-date-strip"></div>
+        </div>
+        <div class="section-title">OPERACIONES ARS</div>
+        <div class="actions-grid" style="margin-bottom:.75rem;">
+          <div class="action-card" onclick="openModal('transfer')"><div class="action-icon">↗</div><div class="action-text"><div class="action-title">Transferir $</div><div class="action-desc">Enviar pesos</div></div></div>
+          <div class="action-card" onclick="openModal('deposit')"><div class="action-icon">↙</div><div class="action-text"><div class="action-title">Depositar $</div><div class="action-desc">Simular ingreso</div></div></div>
+          <div class="action-card" onclick="userTab('prestamos');openModal('new-prestamo')"><div class="action-icon amber">$</div><div class="action-text"><div class="action-title">Préstamo</div><div class="action-desc">Solicitar crédito</div></div></div>
+        </div>
+        <div class="section-title">OPERACIONES USD</div>
+        <div id="usd-actions-home" class="actions-grid">
+          <div class="action-card blue-card" onclick="openModal('comprar-usd')"><div class="action-icon blue">+$</div><div class="action-text"><div class="action-title">Comprar USD</div><div class="action-desc">Pesos → Dólares</div></div></div>
+          <div class="action-card blue-card" onclick="openModal('vender-usd')"><div class="action-icon blue">-$</div><div class="action-text"><div class="action-title">Vender USD</div><div class="action-desc">Dólares → Pesos</div></div></div>
+          <div class="action-card blue-card" onclick="openModal('transfer-usd')"><div class="action-icon blue">↗</div><div class="action-text"><div class="action-title">Transferir USD</div><div class="action-desc">Enviar dólares</div></div></div>
+        </div>
+        <div id="usd-closed-home" class="usd-closed-banner" style="display:none">
+          <p>No tenés cuenta en USD. Abrila gratis y empezá a operar en dólares.</p>
+          <button class="btn-open-usd" onclick="abrirCuentaUSD()">Abrir cuenta USD</button>
+        </div>
+        <div class="section-title">ÚLTIMOS MOVIMIENTOS</div>
+        <div class="card-box" id="tx-list"></div>
+      </div>
+      <!-- DIVISAS -->
+      <div id="utab-divisas" style="display:none">
+        <div id="divisas-sin-cuenta" style="display:none">
+          <div class="usd-closed-banner" style="flex-direction:column;align-items:flex-start;gap:12px;">
+            <div><p style="font-size:15px;font-weight:700;color:var(--blue);margin-bottom:4px;">Cuenta en USD</p><p style="font-size:13px;color:var(--text2);">Abrí tu caja de ahorro en dólares sin costo. Comprá, vendé y transferí divisas con el tipo de cambio del banco.</p></div>
+            <button class="btn-open-usd" onclick="abrirCuentaUSD()">Abrir cuenta USD gratis</button>
+          </div>
+        </div>
+        <div id="divisas-con-cuenta">
+          <div class="balance-card usd-card" style="margin-bottom:1.25rem;">
+            <div><div class="balance-label">SALDO EN DÓLARES</div><div class="balance-amount" id="usd-balance-main">USD 0,00</div><div class="balance-account" id="usd-accnum-main"></div></div>
+            <div><div class="balance-pill pill-usd">USD</div></div>
+          </div>
+          <div class="fx-strip">
+            <div class="fx-item">TC Comprador (banco compra / vos vendés): <strong><span id="fx-compra-div"></span></strong></div>
+            <div class="fx-sep"></div>
+            <div class="fx-item">TC Vendedor (banco vende / vos comprás): <strong><span id="fx-venta-div"></span></strong></div>
+          </div>
+          <div class="section-title">OPERACIONES</div>
+          <div class="actions-grid">
+            <div class="action-card blue-card" onclick="openModal('comprar-usd')"><div class="action-icon blue">+$</div><div class="action-text"><div class="action-title">Comprar USD</div><div class="action-desc">Pesos → Dólares</div></div></div>
+            <div class="action-card blue-card" onclick="openModal('vender-usd')"><div class="action-icon blue">-$</div><div class="action-text"><div class="action-title">Vender USD</div><div class="action-desc">Dólares → Pesos</div></div></div>
+            <div class="action-card blue-card" onclick="openModal('transfer-usd')"><div class="action-icon blue">↗</div><div class="action-text"><div class="action-title">Transferir USD</div><div class="action-desc">Enviar dólares</div></div></div>
+          </div>
+          <div class="section-title">MOVIMIENTOS USD</div>
+          <div class="card-box" id="usd-tx-list"></div>
+        </div>
+      </div>
+      <!-- PRÉSTAMOS -->
+      <div id="utab-prestamos" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <div class="section-title" style="margin:0">MIS PRÉSTAMOS</div>
+          <button class="btn-primary" style="width:auto;padding:8px 18px;margin:0;font-size:13px" onclick="openModal('new-prestamo')">+ Solicitar préstamo</button>
+        </div>
+        <div class="card-box" id="prestamos-list"></div>
+      </div>
+      <!-- PLAZOS -->
+      <div id="utab-plazos" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <div class="section-title" style="margin:0">MIS PLAZOS FIJOS</div>
+          <button class="btn-primary" style="width:auto;padding:8px 18px;margin:0;font-size:13px" onclick="openModal('new-plazo')">+ Constituir plazo fijo</button>
+        </div>
+        <div class="card-box" id="plazos-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════ ADMIN ══ -->
+  <div id="screen-admin" class="screen">
+    <div class="topbar">
+      <div class="topbar-logo-wrap">
+        <svg width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="15" r="15" fill="rgba(255,255,255,0.2)"/><rect x="6" y="13" width="18" height="3.5" rx="1.75" fill="white"/><rect x="6" y="8.5" width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.5)"/><rect x="6" y="17.5" width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.5)"/><rect x="6" y="4" width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.22)"/><rect x="6" y="22" width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.22)"/></svg>
+        <span class="topbar-name-brand">Banco Blanco</span><span class="badge-admin">ADMIN</span>
+      </div>
+      <div class="topbar-user">
+        <div class="user-avatar">A</div>
+        <span class="user-name-top">Administrador</span>
+        <button class="btn-logout" onclick="doLogout()">Salir</button>
+      </div>
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-tab active" onclick="adminTab('users')">Usuarios</button>
+      <button class="nav-tab" onclick="adminTab('productos')">Préstamos y Plazos</button>
+      <button class="nav-tab" onclick="adminTab('divisas')">Divisas</button>
+      <button class="nav-tab" onclick="adminTab('transactions')">Transacciones</button>
+      <button class="nav-tab" onclick="adminTab('config')">Tasas y TC</button>
+    </div>
+    <div class="admin-content">
+      <div id="apanel-users">
+        <div class="admin-grid" id="admin-stats"></div>
+        <div class="users-table">
+          <div class="table-header"><span class="section-title" style="margin:0">CUENTAS DE USUARIOS</span></div>
+          <table class="admin-table">
+            <thead><tr><th>USUARIO</th><th>NOMBRE</th><th>SALDO ARS</th><th>AJUSTAR ARS</th><th>SALDO USD</th><th>AJUSTAR USD</th><th>ELIMINAR</th></tr></thead>
+            <tbody id="admin-users-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="apanel-productos" style="display:none">
+        <div class="users-table">
+          <div class="table-header"><span class="section-title" style="margin:0">PRÉSTAMOS ACTIVOS</span></div>
+          <table class="admin-table">
+            <thead><tr><th>USUARIO</th><th>CAPITAL</th><th>CUOTA</th><th>CUOTAS REST.</th><th>PRÓX. VENC.</th><th>MORA</th></tr></thead>
+            <tbody id="admin-prestamos-body"></tbody>
+          </table>
+        </div>
+        <div class="users-table" style="margin-top:1rem;">
+          <div class="table-header"><span class="section-title" style="margin:0">PLAZOS FIJOS ACTIVOS</span></div>
+          <table class="admin-table">
+            <thead><tr><th>USUARIO</th><th>CAPITAL</th><th>TASA</th><th>INTERÉS</th><th>VENCIMIENTO</th></tr></thead>
+            <tbody id="admin-plazos-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="apanel-divisas" style="display:none">
+        <div class="users-table">
+          <div class="table-header"><span class="section-title" style="margin:0">POSICIÓN EN USD POR USUARIO</span></div>
+          <table class="admin-table">
+            <thead><tr><th>USUARIO</th><th>NOMBRE</th><th>Nº CUENTA USD</th><th>SALDO USD</th><th>EQUIV. ARS</th></tr></thead>
+            <tbody id="admin-divisas-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="apanel-transactions" style="display:none">
+        <div class="users-table"><div class="table-header"><span class="section-title" style="margin:0">TODAS LAS TRANSACCIONES</span></div><div id="admin-tx-list"></div></div>
+      </div>
+      <div id="apanel-config" style="display:none">
+        <div class="users-table">
+          <div class="table-header"><span class="section-title" style="margin:0">TASAS Y TIPO DE CAMBIO</span></div>
+          <div style="padding:1.25rem;">
+            <p style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1.5px;margin-bottom:.75rem;">TASAS DE INTERÉS</p>
+            <div class="tasa-row"><label>Tasa Plazo Fijo (TNA)</label><input type="number" id="cfg-tasa-pf" step="0.1" min="0"/><span class="unit">%</span></div>
+            <div class="tasa-row"><label>Tasa Préstamos (TNA)</label><input type="number" id="cfg-tasa-pr" step="0.1" min="0"/><span class="unit">%</span></div>
+            <div class="tasa-row"><label>Interés por mora (mensual)</label><input type="number" id="cfg-tasa-mora" step="0.1" min="0"/><span class="unit">%</span></div>
+            <p style="font-size:11px;color:var(--text3);margin-bottom:1rem;">Los cambios aplican a nuevos productos solamente.</p>
+            <div class="section-divider"></div>
+            <p style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1.5px;margin:1rem 0 .75rem;">TIPO DE CAMBIO (ARS por USD)</p>
+            <div class="tasa-row"><label>TC Comprador (banco compra USD / usuario vende)</label><input type="number" id="cfg-tc-compra" step="1" min="0"/><span class="unit">ARS/USD</span></div>
+            <div class="tasa-row"><label>TC Vendedor (banco vende USD / usuario compra)</label><input type="number" id="cfg-tc-venta" step="1" min="0"/><span class="unit">ARS/USD</span></div>
+            <button class="tasa-save-btn" onclick="saveConfig()">Guardar todos los cambios</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════ MODALES ══ -->
+  <div class="modal-overlay" id="modal-transfer"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Transferir pesos</span><button class="modal-close" onclick="closeModal('transfer')">✕</button></div>
+    <div class="form-group"><label>USUARIO DESTINATARIO</label><input type="text" id="tf-dest" placeholder="Nombre de usuario"/></div>
+    <div class="form-group"><label>MONTO ARS</label><input type="number" id="tf-amount" placeholder="$ 0.00" min="1"/></div>
+    <div id="tf-error" class="error-msg"></div>
+    <button class="btn-primary" onclick="doTransfer()">CONFIRMAR</button>
+  </div></div>
+
+  <div class="modal-overlay" id="modal-deposit"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Simular depósito</span><button class="modal-close" onclick="closeModal('deposit')">✕</button></div>
+    <div class="form-group"><label>MONTO</label><input type="number" id="dep-amount" placeholder="$ 0.00" min="1"/></div>
+    <div id="dep-error" class="error-msg"></div>
+    <button class="btn-primary" onclick="doDeposit()">DEPOSITAR</button>
+  </div></div>
+
+  <div class="modal-overlay" id="modal-comprar-usd"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Comprar dólares</span><button class="modal-close" onclick="closeModal('comprar-usd')">✕</button></div>
+    <div class="fx-info-box"><strong id="compra-tc-label"></strong>Se debitarán los pesos correspondientes de tu cuenta ARS.</div>
+    <div class="form-group"><label>USD A COMPRAR</label><input type="number" id="buy-usd-amt" placeholder="Ej: 100" min="1" step="any" oninput="simCompra()"/></div>
+    <div class="simulacion-box" id="buy-sim" style="display:none">
+      <div class="sim-row"><span class="sim-label">USD a recibir</span><span class="sim-value" id="buy-sim-usd"></span></div>
+      <div class="sim-row"><span class="sim-label">TC vendedor</span><span class="sim-value" id="buy-sim-tc"></span></div>
+      <div class="sim-row"><span class="sim-label">ARS a debitar</span><span class="sim-value" id="buy-sim-ars"></span></div>
+    </div>
+    <div id="buy-error" class="error-msg"></div>
+    <button class="btn-primary" style="background:var(--blue)" onclick="doComprarUSD()">CONFIRMAR COMPRA</button>
+  </div></div>
+
+  <div class="modal-overlay" id="modal-vender-usd"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Vender dólares</span><button class="modal-close" onclick="closeModal('vender-usd')">✕</button></div>
+    <div class="fx-info-box"><strong id="venta-tc-label"></strong>Se acreditarán los pesos en tu cuenta ARS.</div>
+    <div class="form-group"><label>USD A VENDER</label><input type="number" id="sell-usd-amt" placeholder="Ej: 100" min="1" step="any" oninput="simVenta()"/></div>
+    <div class="simulacion-box" id="sell-sim" style="display:none">
+      <div class="sim-row"><span class="sim-label">USD a debitar</span><span class="sim-value" id="sell-sim-usd"></span></div>
+      <div class="sim-row"><span class="sim-label">TC comprador</span><span class="sim-value" id="sell-sim-tc"></span></div>
+      <div class="sim-row"><span class="sim-label">ARS a recibir</span><span class="sim-value" id="sell-sim-ars"></span></div>
+    </div>
+    <div id="sell-error" class="error-msg"></div>
+    <button class="btn-primary" style="background:var(--blue)" onclick="doVenderUSD()">CONFIRMAR VENTA</button>
+  </div></div>
+
+  <div class="modal-overlay" id="modal-transfer-usd"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Transferir dólares</span><button class="modal-close" onclick="closeModal('transfer-usd')">✕</button></div>
+    <div class="form-group"><label>USUARIO DESTINATARIO</label><input type="text" id="tf-usd-dest" placeholder="Nombre de usuario"/></div>
+    <div class="form-group"><label>MONTO EN USD</label><input type="number" id="tf-usd-amt" placeholder="USD 0.00" min="0.01" step="any"/></div>
+    <div id="tf-usd-error" class="error-msg"></div>
+    <button class="btn-primary" style="background:var(--blue)" onclick="doTransferUSD()">CONFIRMAR TRANSFERENCIA</button>
+  </div></div>
+
+  <div class="modal-overlay" id="modal-new-prestamo"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Solicitar préstamo</span><button class="modal-close" onclick="closeModal('new-prestamo')">✕</button></div>
+    <div class="two-col">
+      <div class="form-group"><label>CAPITAL ($)</label><input type="number" id="pr-capital" placeholder="Ej: 50000" min="100" oninput="simPrestamo()"/></div>
+      <div class="form-group"><label>PLAZO (MÁX 72 MESES)</label><input type="number" id="pr-plazo" placeholder="Ej: 12" min="1" max="72" oninput="simPrestamo()"/></div>
+    </div>
+    <div class="simulacion-box" id="pr-sim" style="display:none">
+      <div class="sim-row"><span class="sim-label">Tasa TNA</span><span class="sim-value" id="pr-sim-tna"></span></div>
+      <div class="sim-row"><span class="sim-label">Sistema</span><span class="sim-value">Francés</span></div>
+      <div class="sim-row"><span class="sim-label">Cuota mensual</span><span class="sim-value" id="pr-sim-cuota"></span></div>
+      <div class="sim-row"><span class="sim-label">Total a pagar</span><span class="sim-value" id="pr-sim-total"></span></div>
+      <div class="sim-row"><span class="sim-label">1ª cuota</span><span class="sim-value" id="pr-sim-fecha1"></span></div>
+    </div>
+    <div id="pr-error" class="error-msg"></div>
+    <button class="btn-primary" onclick="doSolicitarPrestamo()">CONFIRMAR SOLICITUD</button>
+  </div></div>
+
+  <div class="modal-overlay" id="modal-new-plazo"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Constituir plazo fijo</span><button class="modal-close" onclick="closeModal('new-plazo')">✕</button></div>
+    <div class="two-col">
+      <div class="form-group"><label>MONTO ($)</label><input type="number" id="pf-monto" placeholder="Ej: 10000" min="100" oninput="simPlazo()"/></div>
+      <div class="form-group"><label>PLAZO (MÁX 12 MESES)</label><input type="number" id="pf-plazo" placeholder="Ej: 3" min="1" max="12" oninput="simPlazo()"/></div>
+    </div>
+    <div class="simulacion-box" id="pf-sim" style="display:none">
+      <div class="sim-row"><span class="sim-label">Tasa TNA</span><span class="sim-value" id="pf-sim-tna"></span></div>
+      <div class="sim-row"><span class="sim-label">Interés a cobrar</span><span class="sim-value" id="pf-sim-interes"></span></div>
+      <div class="sim-row"><span class="sim-label">Total al vencimiento</span><span class="sim-value" id="pf-sim-total"></span></div>
+      <div class="sim-row"><span class="sim-label">Fecha de vencimiento</span><span class="sim-value" id="pf-sim-fecha"></span></div>
+    </div>
+    <div id="pf-error" class="error-msg"></div>
+    <button class="btn-primary" onclick="doConstitutirPlazo()">CONFIRMAR PLAZO FIJO</button>
+  </div></div>
+
+  <div class="modal-overlay" id="modal-confirm-delete"><div class="confirm-modal">
+    <div class="confirm-icon">✕</div>
+    <div class="confirm-title">¿Eliminar usuario?</div>
+    <div class="confirm-desc" id="confirm-desc"></div>
+    <div class="confirm-actions">
+      <button class="btn-cancel" onclick="closeModal('confirm-delete')">Cancelar</button>
+      <button class="btn-confirm-delete" onclick="confirmDelete()">Sí, eliminar</button>
+    </div>
+  </div></div>
+
+  <div class="notification" id="notif"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
