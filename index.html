@@ -18,7 +18,7 @@
     input,button,select{font-family:'Arial',sans-serif;}
     .screen{display:none;min-height:100vh;}
     .screen.active{display:flex;flex-direction:column;}
-
+ 
     /* LOADING */
     #screen-loading{align-items:center;justify-content:center;background:#1a1a1a;}
     .loading-logo{text-align:center;}
@@ -26,7 +26,7 @@
     .loading-logo p{color:rgba(255,255,255,0.5);font-size:12px;letter-spacing:3px;margin-bottom:32px;}
     .spinner{width:36px;height:36px;border:3px solid rgba(219,0,17,0.3);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto;}
     @keyframes spin{to{transform:rotate(360deg);}}
-
+ 
     /* LOGIN */
     #screen-login{align-items:center;justify-content:center;background:#1a1a1a;padding:2rem;}
     .login-wrap{display:flex;width:100%;max-width:820px;border-radius:20px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,0.4);}
@@ -53,7 +53,7 @@
     .error-msg.show{display:block;}
     .success-msg{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;padding:10px 14px;border-radius:8px;font-size:12px;margin-top:.75rem;text-align:center;display:none;}
     .success-msg.show{display:block;}
-
+ 
     /* TOPBAR */
     .topbar{background:var(--red);padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;height:58px;flex-shrink:0;}
     .topbar-logo-wrap{display:flex;align-items:center;gap:10px;}
@@ -64,12 +64,12 @@
     .btn-logout{padding:6px 14px;background:transparent;border:1px solid rgba(255,255,255,.35);border-radius:6px;color:rgba(255,255,255,.85);font-size:12px;cursor:pointer;transition:all .2s;}
     .btn-logout:hover{border-color:#fff;color:#fff;}
     .badge-admin{background:#fff;color:var(--red);font-size:9px;padding:2px 7px;border-radius:10px;font-weight:700;letter-spacing:1px;margin-left:6px;}
-
+ 
     /* USER NAV */
     .user-nav{display:flex;border-bottom:2px solid var(--gray2);background:#fff;padding:0 1.5rem;overflow-x:auto;}
     .user-nav-tab{padding:12px 14px;border:none;background:transparent;color:var(--text3);font-size:13px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;font-weight:600;white-space:nowrap;}
     .user-nav-tab.active{color:var(--red);border-bottom-color:var(--red);}
-
+ 
     /* DASHBOARD */
     #screen-dashboard{background:var(--gray);}
     .dash-content{padding:1.5rem;flex:1;max-width:740px;margin:0 auto;width:100%;}
@@ -98,6 +98,7 @@
     .action-icon{width:34px;height:34px;border-radius:9px;background:var(--red3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--red);font-weight:700;}
     .action-icon.blue{background:var(--blue-bg);color:var(--blue);}
     .action-icon.amber{background:var(--amber-bg);color:var(--amber);}
+    .action-icon.green{background:var(--green-bg);color:var(--green);}
     .action-text .action-title{font-size:13px;color:var(--text);font-weight:700;}
     .action-text .action-desc{font-size:10px;color:var(--text3);margin-top:1px;}
     .card-box{background:#fff;border:1.5px solid var(--gray2);border-radius:12px;overflow:hidden;margin-bottom:1.25rem;}
@@ -125,7 +126,7 @@
     .prod-info{flex:1;}
     .prod-title{font-size:13px;font-weight:700;color:var(--text);}
     .prod-detail{font-size:11px;color:var(--text3);margin-top:2px;}
-
+ 
     /* MODAL */
     .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center;padding:1rem;}
     .modal-overlay.open{display:flex;}
@@ -142,7 +143,7 @@
     .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
     .fx-info-box{background:var(--blue-bg);border-radius:10px;padding:.9rem 1rem;margin-bottom:1rem;font-size:12px;color:var(--blue);}
     .fx-info-box strong{display:block;font-size:14px;margin-bottom:4px;}
-
+ 
     /* ADMIN */
     #screen-admin{background:var(--gray);}
     .admin-content{padding:1.5rem;flex:1;max-width:980px;margin:0 auto;width:100%;}
@@ -213,7 +214,7 @@
 </head>
 <body>
 <div id="app">
-
+ 
   <!-- LOADING -->
   <div id="screen-loading" class="screen active">
     <div class="loading-logo">
@@ -222,7 +223,7 @@
       <div class="spinner"></div>
     </div>
   </div>
-
+ 
   <!-- LOGIN -->
   <div id="screen-login" class="screen">
     <div class="login-wrap">
@@ -257,7 +258,7 @@
       </div>
     </div>
   </div>
-
+ 
   <!-- DASHBOARD -->
   <div id="screen-dashboard" class="screen">
     <div class="topbar">
@@ -297,10 +298,11 @@
           <div class="fx-item" style="color:var(--text3);font-size:11px;" id="today-label"></div>
         </div>
         <div class="section-title">OPERACIONES ARS</div>
-        <div class="actions-grid" style="margin-bottom:.75rem;">
+        <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(4,1fr);">
           <div class="action-card" onclick="openModal('transfer')"><div class="action-icon">↗</div><div class="action-text"><div class="action-title">Transferir $</div><div class="action-desc">Enviar pesos</div></div></div>
           <div class="action-card" onclick="openModal('deposit')"><div class="action-icon">↙</div><div class="action-text"><div class="action-title">Depositar $</div><div class="action-desc">Simular ingreso</div></div></div>
           <div class="action-card" onclick="userTab('prestamos');openModal('new-prestamo')"><div class="action-icon amber">$</div><div class="action-text"><div class="action-title">Préstamo</div><div class="action-desc">Solicitar crédito</div></div></div>
+          <div class="action-card" onclick="userTab('plazos');openModal('new-plazo')"><div class="action-icon green">%</div><div class="action-text"><div class="action-title">Plazo Fijo</div><div class="action-desc">Invertir dinero</div></div></div>
         </div>
         <div class="section-title">OPERACIONES USD</div>
         <div id="usd-actions-home" class="actions-grid">
@@ -358,7 +360,7 @@
       </div>
     </div>
   </div>
-
+ 
   <!-- ADMIN -->
   <div id="screen-admin" class="screen">
     <div class="topbar">
@@ -437,7 +439,7 @@
       </div>
     </div>
   </div>
-
+ 
   <!-- MODALES -->
   <div class="modal-overlay" id="modal-transfer"><div class="modal">
     <div class="modal-header"><span class="modal-title">Transferir pesos</span><button class="modal-close" onclick="closeModal('transfer')">✕</button></div>
@@ -446,14 +448,14 @@
     <div id="tf-error" class="error-msg"></div>
     <button class="btn-primary" onclick="doTransfer()">CONFIRMAR</button>
   </div></div>
-
+ 
   <div class="modal-overlay" id="modal-deposit"><div class="modal">
     <div class="modal-header"><span class="modal-title">Simular depósito</span><button class="modal-close" onclick="closeModal('deposit')">✕</button></div>
     <div class="form-group"><label>MONTO</label><input type="number" id="dep-amount" placeholder="$ 0.00" min="1"/></div>
     <div id="dep-error" class="error-msg"></div>
     <button class="btn-primary" onclick="doDeposit()">DEPOSITAR</button>
   </div></div>
-
+ 
   <div class="modal-overlay" id="modal-comprar-usd"><div class="modal">
     <div class="modal-header"><span class="modal-title">Comprar dólares</span><button class="modal-close" onclick="closeModal('comprar-usd')">✕</button></div>
     <div class="fx-info-box"><strong id="compra-tc-label"></strong>Se debitarán los pesos de tu cuenta ARS.</div>
@@ -466,7 +468,7 @@
     <div id="buy-error" class="error-msg"></div>
     <button class="btn-primary" style="background:var(--blue)" onclick="doComprarUSD()">CONFIRMAR COMPRA</button>
   </div></div>
-
+ 
   <div class="modal-overlay" id="modal-vender-usd"><div class="modal">
     <div class="modal-header"><span class="modal-title">Vender dólares</span><button class="modal-close" onclick="closeModal('vender-usd')">✕</button></div>
     <div class="fx-info-box"><strong id="venta-tc-label"></strong>Se acreditarán los pesos en tu cuenta ARS.</div>
@@ -479,7 +481,7 @@
     <div id="sell-error" class="error-msg"></div>
     <button class="btn-primary" style="background:var(--blue)" onclick="doVenderUSD()">CONFIRMAR VENTA</button>
   </div></div>
-
+ 
   <div class="modal-overlay" id="modal-transfer-usd"><div class="modal">
     <div class="modal-header"><span class="modal-title">Transferir dólares</span><button class="modal-close" onclick="closeModal('transfer-usd')">✕</button></div>
     <div class="form-group"><label>USUARIO DESTINATARIO</label><input type="text" id="tf-usd-dest" placeholder="Nombre de usuario"/></div>
@@ -487,7 +489,7 @@
     <div id="tf-usd-error" class="error-msg"></div>
     <button class="btn-primary" style="background:var(--blue)" onclick="doTransferUSD()">CONFIRMAR TRANSFERENCIA</button>
   </div></div>
-
+ 
   <div class="modal-overlay" id="modal-new-prestamo"><div class="modal">
     <div class="modal-header"><span class="modal-title">Solicitar préstamo</span><button class="modal-close" onclick="closeModal('new-prestamo')">✕</button></div>
     <div class="two-col">
@@ -504,7 +506,7 @@
     <div id="pr-error" class="error-msg"></div>
     <button class="btn-primary" onclick="doSolicitarPrestamo()">CONFIRMAR SOLICITUD</button>
   </div></div>
-
+ 
   <div class="modal-overlay" id="modal-new-plazo"><div class="modal">
     <div class="modal-header"><span class="modal-title">Constituir plazo fijo</span><button class="modal-close" onclick="closeModal('new-plazo')">✕</button></div>
     <div class="two-col">
@@ -520,7 +522,7 @@
     <div id="pf-error" class="error-msg"></div>
     <button class="btn-primary" onclick="doConstitutirPlazo()">CONFIRMAR PLAZO FIJO</button>
   </div></div>
-
+ 
   <div class="modal-overlay" id="modal-confirm-delete"><div class="confirm-modal">
     <div class="confirm-icon">✕</div>
     <div class="confirm-title">¿Eliminar usuario?</div>
@@ -530,10 +532,10 @@
       <button class="btn-confirm-delete" onclick="confirmDelete()">Sí, eliminar</button>
     </div>
   </div></div>
-
+ 
   <div class="notification" id="notif"></div>
 </div>
-
+ 
 <!-- Firebase SDK (modo compat para uso sin bundler) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
