@@ -2,7 +2,7 @@
 //  BANCO BLANCO — app.js  (versión Firebase / Firestore)
 //  Los datos se persisten en la nube y se sincronizan en tiempo real.
 // ════════════════════════════════════════════════════════════════
-
+ 
 // ─── CONFIGURACIÓN FIREBASE ──────────────────────────────────────
 const firebaseConfig = {
   apiKey:            "AIzaSyA0TpXfQZ4MyeUESGk2Idy9d5UDrqy60_w",
@@ -12,19 +12,19 @@ const firebaseConfig = {
   messagingSenderId: "160603200264",
   appId:             "1:160603200264:web:d51a413468d2be1d352abd",
 };
-
+ 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-
+ 
 // ─── CREDENCIALES ADMIN (solo en cliente — app de simulación) ────
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'admin123';
-
+ 
 // ─── ESTADO LOCAL ────────────────────────────────────────────────
 let currentUser   = null;   // objeto del usuario logueado (desde Firestore)
 let localConfig   = null;   // configuración de tasas y TC
 let unsubscribeUser = null; // listener en tiempo real del usuario activo
-
+ 
 // ─── HELPERS DE FORMATO ──────────────────────────────────────────
 function fmtARS(n) {
   return '$ ' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -51,7 +51,7 @@ function cuotaFrancesa(C, i, n) {
 }
 function today() { return new Date(); }
 function todayStr() { return fmtDate(today()); }
-
+ 
 function showNotif(msg, type = 'success') {
   const n = document.getElementById('notif');
   n.textContent = msg;
@@ -76,7 +76,7 @@ function setLoading(btnId, loading) {
   if (loading) btn.dataset.orig = btn.textContent, btn.textContent = 'Cargando...';
   else btn.textContent = btn.dataset.orig || btn.textContent;
 }
-
+ 
 // ─── INICIALIZACIÓN ───────────────────────────────────────────────
 async function init() {
   showScreen('loading');
@@ -85,7 +85,7 @@ async function init() {
   document.getElementById('today-label').textContent = todayStr();
   showScreen('login');
 }
-
+ 
 // ─── CONFIG GLOBAL (tasas y TC) ──────────────────────────────────
 // Se guarda en Firestore en la colección "config", documento "global"
 async function ensureConfig() {
@@ -99,12 +99,12 @@ async function ensureConfig() {
     localConfig = snap.data();
   }
 }
-
+ 
 async function reloadConfig() {
   const snap = await db.collection('config').doc('global').get();
   localConfig = snap.data();
 }
-
+ 
 function updateFXLabels() {
   if (!localConfig) return;
   ['fx-compra-strip', 'fx-compra-div'].forEach(id => {
@@ -120,7 +120,7 @@ function updateFXLabels() {
   const vl = document.getElementById('venta-tc-label');
   if (vl) vl.textContent = 'TC Comprador (banco compra): ' + fmtTC(localConfig.tcCompra) + ' por USD.';
 }
-
+ 
 // ─── AUTH ─────────────────────────────────────────────────────────
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach((t, i) =>
@@ -129,17 +129,17 @@ function switchTab(tab) {
   document.getElementById('tab-login').style.display = tab === 'login' ? '' : 'none';
   document.getElementById('tab-register').style.display = tab === 'register' ? '' : 'none';
 }
-
+ 
 async function doLogin() {
   const u = document.getElementById('login-user').value.trim().toLowerCase();
   const p = document.getElementById('login-pass').value;
   const err = document.getElementById('login-error');
   err.classList.remove('show');
-
+ 
   if (!u || !p) { err.textContent = 'Completá usuario y contraseña.'; err.classList.add('show'); return; }
-
+ 
   setLoading('btn-login', true);
-
+ 
   // Admin
   if (u === ADMIN_USER && p === ADMIN_PASS) {
     await reloadConfig();
@@ -148,7 +148,7 @@ async function doLogin() {
     showScreen('admin');
     return;
   }
-
+ 
   // Usuario normal
   try {
     const snap = await db.collection('users').doc(u).get();
@@ -173,7 +173,7 @@ async function doLogin() {
   }
   setLoading('btn-login', false);
 }
-
+ 
 async function doRegister() {
   const name = document.getElementById('reg-name').value.trim();
   const username = document.getElementById('reg-user').value.trim().toLowerCase();
@@ -181,18 +181,18 @@ async function doRegister() {
   const err = document.getElementById('reg-error');
   const suc = document.getElementById('reg-success');
   err.classList.remove('show'); suc.classList.remove('show');
-
+ 
   if (!name || !username || !pass) { err.textContent = 'Completá todos los campos.'; err.classList.add('show'); return; }
   if (!/^[a-z0-9_]+$/.test(username)) { err.textContent = 'El usuario solo puede tener letras minúsculas, números y guion bajo.'; err.classList.add('show'); return; }
   if (pass.length < 4) { err.textContent = 'La contraseña debe tener al menos 4 caracteres.'; err.classList.add('show'); return; }
   if (username === ADMIN_USER) { err.textContent = 'Ese nombre no está disponible.'; err.classList.add('show'); return; }
-
+ 
   setLoading('btn-register', true);
   try {
     const ref = db.collection('users').doc(username);
     const snap = await ref.get();
     if (snap.exists) { err.textContent = 'Ese usuario ya existe.'; err.classList.add('show'); setLoading('btn-register', false); return; }
-
+ 
     const num = String(Math.floor(Math.random() * 9000) + 1000).padStart(4, '0') + '-' + String(Math.floor(Math.random() * 9000) + 1000);
     await ref.set({
       name, password: pass, balance: 0, accountNum: num,
@@ -209,7 +209,7 @@ async function doRegister() {
   }
   setLoading('btn-register', false);
 }
-
+ 
 function doLogout() {
   if (unsubscribeUser) { unsubscribeUser(); unsubscribeUser = null; }
   currentUser = null;
@@ -217,7 +217,7 @@ function doLogout() {
   document.getElementById('login-pass').value = '';
   showScreen('login');
 }
-
+ 
 // ─── LISTENER EN TIEMPO REAL ──────────────────────────────────────
 // Cuando otro usuario (o el admin) modifica los datos, la pantalla
 // se actualiza automáticamente sin necesidad de recargar.
@@ -229,7 +229,7 @@ function subscribeToUser(username) {
     renderDashboard();
   });
 }
-
+ 
 // ─── VENCIMIENTOS ─────────────────────────────────────────────────
 async function procesarVencimientos() {
   if (!currentUser) return;
@@ -241,7 +241,7 @@ async function procesarVencimientos() {
   const prestamos = [...(data.prestamos || [])];
   let balance = data.balance;
   let txCounter = data.txCounter || 200;
-
+ 
   // Plazos fijos vencidos
   plazos.forEach(pf => {
     if (!pf.acreditado && dateFromStr(pf.fechaVenc) <= now) {
@@ -252,7 +252,7 @@ async function procesarVencimientos() {
       txs.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo – capital + interés', amount: total, date: todayStr() });
     }
   });
-
+ 
   // Cuotas de préstamos vencidas
   prestamos.forEach(pr => {
     if (pr.cuotasPagas < pr.cuotas) {
@@ -275,27 +275,28 @@ async function procesarVencimientos() {
       }
     }
   });
-
+ 
   if (changed) {
     await db.collection('users').doc(currentUser.id).update({
       balance, plazos, prestamos, transactions: txs, txCounter,
     });
   }
 }
-
+ 
 // ─── DASHBOARD ────────────────────────────────────────────────────
 function userTab(tab) {
   document.querySelectorAll('.user-nav-tab').forEach((t, i) =>
-    t.classList.toggle('active', ['home', 'divisas', 'prestamos', 'plazos'][i] === tab)
+    t.classList.toggle('active', ['home', 'divisas', 'prestamos', 'plazos', 'historial'][i] === tab)
   );
-  ['home', 'divisas', 'prestamos', 'plazos'].forEach(t =>
+  ['home', 'divisas', 'prestamos', 'plazos', 'historial'].forEach(t =>
     document.getElementById('utab-' + t).style.display = t === tab ? '' : 'none'
   );
   if (tab === 'divisas') renderDivisasTab();
   if (tab === 'prestamos') renderPrestamosUser();
   if (tab === 'plazos') renderPlazosUser();
+  if (tab === 'historial') renderHistorial();
 }
-
+ 
 function renderDashboard() {
   if (!currentUser) return;
   document.getElementById('topbar-avatar').textContent = currentUser.name[0].toUpperCase();
@@ -306,7 +307,7 @@ function renderDashboard() {
   updateFXLabels();
   renderTxList();
 }
-
+ 
 function syncUSDDisplay() {
   if (!currentUser) return;
   const hasUSD = !!currentUser.accountNumUSD;
@@ -320,12 +321,12 @@ function syncUSDDisplay() {
   document.getElementById('usd-actions-home').style.display = hasUSD ? '' : 'none';
   document.getElementById('usd-closed-home').style.display = hasUSD ? 'none' : '';
 }
-
+ 
 function renderTxList() {
   const el = document.getElementById('tx-list');
   const txs = [...(currentUser.transactions || [])].reverse();
   if (!txs.length) { el.innerHTML = '<div class="empty-state">No hay movimientos aún.</div>'; return; }
-  el.innerHTML = txs.slice(0, 15).map(tx => {
+  el.innerHTML = txs.slice(0, 5).map(tx => {
     const cls = tx.type === 'credit' ? 'credit' : 'debit';
     const icon = tx.type === 'credit' ? '↙' : '↗';
     return `<div class="tx-item">
@@ -335,7 +336,7 @@ function renderTxList() {
     </div>`;
   }).join('');
 }
-
+ 
 // ─── CUENTA USD ───────────────────────────────────────────────────
 async function abrirCuentaUSD() {
   if (currentUser.accountNumUSD) return;
@@ -344,14 +345,14 @@ async function abrirCuentaUSD() {
   showNotif('✓ Cuenta en USD abierta: ' + numUSD, 'info');
   userTab('divisas');
 }
-
+ 
 function renderDivisasTab() {
   const hasUSD = !!currentUser.accountNumUSD;
   document.getElementById('divisas-sin-cuenta').style.display = hasUSD ? 'none' : '';
   document.getElementById('divisas-con-cuenta').style.display = hasUSD ? '' : 'none';
   if (hasUSD) { syncUSDDisplay(); updateFXLabels(); renderUSDTxList(); }
 }
-
+ 
 function renderUSDTxList() {
   const el = document.getElementById('usd-tx-list');
   const txs = [...(currentUser.txUSD || [])].reverse();
@@ -365,7 +366,7 @@ function renderUSDTxList() {
     </div>`;
   }).join('');
 }
-
+ 
 // ─── FX SIMULACIONES ─────────────────────────────────────────────
 function simCompra() {
   const usd = parseFloat(document.getElementById('buy-usd-amt').value);
@@ -385,7 +386,7 @@ function simVenta() {
   document.getElementById('sell-sim-tc').textContent = fmtTC(localConfig.tcCompra) + ' / USD';
   document.getElementById('sell-sim-ars').textContent = fmtARS(usd * localConfig.tcCompra);
 }
-
+ 
 // ─── OPERACIONES FX ──────────────────────────────────────────────
 async function doComprarUSD() {
   const usd = parseFloat(document.getElementById('buy-usd-amt').value);
@@ -407,7 +408,7 @@ async function doComprarUSD() {
   document.getElementById('buy-sim').style.display = 'none';
   showNotif('✓ Compraste ' + fmtUSD(usd) + ' por ' + fmtARS(ars), 'info');
 }
-
+ 
 async function doVenderUSD() {
   const usd = parseFloat(document.getElementById('sell-usd-amt').value);
   const err = document.getElementById('sell-error'); err.classList.remove('show');
@@ -427,7 +428,7 @@ async function doVenderUSD() {
   document.getElementById('sell-sim').style.display = 'none';
   showNotif('✓ Vendiste ' + fmtUSD(usd) + ' y recibiste ' + fmtARS(ars), 'info');
 }
-
+ 
 async function doTransferUSD() {
   const dest = document.getElementById('tf-usd-dest').value.trim().toLowerCase();
   const usd = parseFloat(document.getElementById('tf-usd-amt').value);
@@ -457,7 +458,7 @@ async function doTransferUSD() {
   document.getElementById('tf-usd-amt').value = '';
   showNotif('✓ Transferiste ' + fmtUSD(usd) + ' a ' + target.name, 'info');
 }
-
+ 
 // ─── OPERACIONES ARS ─────────────────────────────────────────────
 async function doTransfer() {
   const dest = document.getElementById('tf-dest').value.trim().toLowerCase();
@@ -487,7 +488,7 @@ async function doTransfer() {
   document.getElementById('tf-amount').value = '';
   showNotif('✓ Transferiste ' + fmtARS(amount) + ' a ' + target.name);
 }
-
+ 
 async function doDeposit() {
   const amount = parseFloat(document.getElementById('dep-amount').value);
   const err = document.getElementById('dep-error'); err.classList.remove('show');
@@ -501,7 +502,7 @@ async function doDeposit() {
   document.getElementById('dep-amount').value = '';
   showNotif('✓ Depósito de ' + fmtARS(amount) + ' realizado');
 }
-
+ 
 // ─── PRÉSTAMOS ────────────────────────────────────────────────────
 function simPrestamo() {
   const C = parseFloat(document.getElementById('pr-capital').value);
@@ -516,7 +517,7 @@ function simPrestamo() {
   document.getElementById('pr-sim-total').textContent = fmtARS(cuota * n);
   document.getElementById('pr-sim-fecha1').textContent = fmtDate(addMonths(today(), 1));
 }
-
+ 
 async function doSolicitarPrestamo() {
   const C = parseFloat(document.getElementById('pr-capital').value);
   const n = parseInt(document.getElementById('pr-plazo').value);
@@ -539,7 +540,7 @@ async function doSolicitarPrestamo() {
   document.getElementById('pr-sim').style.display = 'none';
   showNotif('✓ Préstamo de ' + fmtARS(C) + ' acreditado en tu cuenta');
 }
-
+ 
 function renderPrestamosUser() {
   const el = document.getElementById('prestamos-list');
   const prs = currentUser.prestamos || [];
@@ -556,7 +557,7 @@ function renderPrestamosUser() {
     </div></div>`;
   }).join('');
 }
-
+ 
 // ─── PLAZOS FIJOS ─────────────────────────────────────────────────
 function simPlazo() {
   const M = parseFloat(document.getElementById('pf-monto').value);
@@ -570,7 +571,7 @@ function simPlazo() {
   document.getElementById('pf-sim-total').textContent = fmtARS(M + interes);
   document.getElementById('pf-sim-fecha').textContent = fmtDate(addMonths(today(), n));
 }
-
+ 
 async function doConstitutirPlazo() {
   const M = parseFloat(document.getElementById('pf-monto').value);
   const n = parseInt(document.getElementById('pf-plazo').value);
@@ -593,7 +594,7 @@ async function doConstitutirPlazo() {
   document.getElementById('pf-sim').style.display = 'none';
   showNotif('✓ Plazo fijo de ' + fmtARS(M) + ' constituido por ' + n + ' meses');
 }
-
+ 
 function renderPlazosUser() {
   const el = document.getElementById('plazos-list');
   const pfs = currentUser.plazos || [];
@@ -607,17 +608,52 @@ function renderPlazosUser() {
     </div></div>`;
   }).join('');
 }
-
+// ─── HISTORIAL DE TRANSACCIONES ──────────────────────────────────
+function renderHistorial() {
+  const TRES_MESES_MS = 90 * 24 * 60 * 60 * 1000;
+  const ahora = new Date();
+ 
+  function dentroDeVentana(dateStr) {
+    const partes = dateStr.split('/');
+    if (partes.length !== 3) return false;
+    const fecha = new Date(+partes[2], +partes[1] - 1, +partes[0]);
+    return (ahora - fecha) <= TRES_MESES_MS;
+  }
+ 
+  function renderLista(txs, elId, fmtAmount) {
+    const el = document.getElementById(elId);
+    const filtradas = [...txs].reverse().filter(tx => dentroDeVentana(tx.date));
+    if (!filtradas.length) {
+      el.innerHTML = '<div class="empty-state">No hay movimientos en los últimos 3 meses.</div>';
+      return;
+    }
+    el.innerHTML = filtradas.map(tx => {
+      const cls = tx.type === 'credit' ? 'credit' : 'debit';
+      const icon = tx.type === 'credit' ? '↙' : '↗';
+      return `<div class="tx-item">
+        <div class="tx-left"><div class="tx-icon ${cls}">${icon}</div>
+        <div><div class="tx-desc">${tx.desc}</div><div class="tx-date">${tx.date}</div></div></div>
+        <div class="tx-amount ${cls}">${tx.type === 'credit' ? '+ ' : '− '}${fmtAmount(tx.amount)}</div>
+      </div>`;
+    }).join('');
+  }
+ 
+  renderLista(currentUser.transactions || [], 'hist-ars-list', fmtARS);
+  renderLista(currentUser.txUSD || [], 'hist-usd-list', fmtUSD);
+}
+ 
+ 
+ 
 // ─── ADMIN ────────────────────────────────────────────────────────
 let allUsers = [];
-
+ 
 async function renderAdmin() {
   const snap = await db.collection('users').get();
   allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   renderAdminStats();
   renderAdminUsers();
 }
-
+ 
 function adminTab(tab) {
   const tabs = ['users', 'productos', 'divisas', 'transactions', 'config'];
   document.querySelectorAll('.nav-tab').forEach((t, i) => t.classList.toggle('active', tabs[i] === tab));
@@ -628,7 +664,7 @@ function adminTab(tab) {
   if (tab === 'config') loadConfigUI();
   if (tab === 'users') renderAdmin();
 }
-
+ 
 function renderAdminStats() {
   const total = allUsers.reduce((s, u) => s + (u.balance || 0), 0);
   const totalUSD = allUsers.reduce((s, u) => s + (u.accountNumUSD ? (u.balanceUSD || 0) : 0), 0);
@@ -639,7 +675,7 @@ function renderAdminStats() {
     <div class="stat-card"><div class="stat-value stat-blue">${fmtUSD(totalUSD)}</div><div class="stat-label">SALDO TOTAL USD</div></div>
     <div class="stat-card"><div class="stat-value stat-accent">${totalPr}</div><div class="stat-label">PRÉSTAMOS ACTIVOS</div></div>`;
 }
-
+ 
 function renderAdminUsers() {
   document.getElementById('admin-users-body').innerHTML = allUsers.map(u => `
     <tr>
@@ -660,7 +696,7 @@ function renderAdminUsers() {
       <td><button class="btn-delete" onclick="askDelete('${u.id}')">Eliminar</button></td>
     </tr>`).join('');
 }
-
+ 
 async function adminAdjustARS(uid, mode) {
   const inp = document.getElementById('adj-ars-' + uid);
   const amount = parseFloat(inp.value);
@@ -684,7 +720,7 @@ async function adminAdjustARS(uid, mode) {
   inp.value = '';
   await renderAdmin();
 }
-
+ 
 async function adminAdjustUSD(uid, mode) {
   const inp = document.getElementById('adj-usd-' + uid);
   const amount = parseFloat(inp.value);
@@ -709,7 +745,7 @@ async function adminAdjustUSD(uid, mode) {
   inp.value = '';
   await renderAdmin();
 }
-
+ 
 function renderAdminProductos() {
   const prs = [];
   allUsers.forEach(u => (u.prestamos || []).filter(p => p.cuotasPagas < p.cuotas).forEach(p => prs.push({ user: u, pr: p })));
@@ -720,7 +756,7 @@ function renderAdminProductos() {
         <td>${pr.montoMora > 0 ? '<span style="color:var(--red);font-weight:700">' + fmtARS(pr.montoMora) + '</span>' : '—'}</td>
       </tr>`).join('')
     : '<tr><td colspan="6" style="text-align:center;padding:1.5rem;color:var(--text3)">No hay préstamos activos</td></tr>';
-
+ 
   const pfs = [];
   allUsers.forEach(u => (u.plazos || []).filter(p => !p.acreditado).forEach(p => pfs.push({ user: u, pf: p })));
   document.getElementById('admin-plazos-body').innerHTML = pfs.length
@@ -730,7 +766,7 @@ function renderAdminProductos() {
       </tr>`).join('')
     : '<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--text3)">No hay plazos fijos activos</td></tr>';
 }
-
+ 
 function renderAdminDivisas() {
   document.getElementById('admin-divisas-body').innerHTML = allUsers.map(u => `
     <tr>
@@ -740,7 +776,7 @@ function renderAdminDivisas() {
       <td>${u.accountNumUSD ? fmtARS((u.balanceUSD || 0) * localConfig.tcCompra) : '—'}</td>
     </tr>`).join('');
 }
-
+ 
 function renderAdminTx() {
   const el = document.getElementById('admin-tx-list');
   const allTx = [];
@@ -758,7 +794,7 @@ function renderAdminTx() {
       <div style="font-size:13px;font-weight:700;color:var(--navy)">${tx.type === 'credit' ? '+ ' : '− '}${fmtARS(tx.amount)}</div>
     </div>`).join('');
 }
-
+ 
 function loadConfigUI() {
   document.getElementById('cfg-tasa-pf').value = localConfig.tasaPF;
   document.getElementById('cfg-tasa-pr').value = localConfig.tasaPR;
@@ -766,7 +802,7 @@ function loadConfigUI() {
   document.getElementById('cfg-tc-compra').value = localConfig.tcCompra;
   document.getElementById('cfg-tc-venta').value = localConfig.tcVenta;
 }
-
+ 
 async function saveConfig() {
   const pf   = parseFloat(document.getElementById('cfg-tasa-pf').value);
   const pr   = parseFloat(document.getElementById('cfg-tasa-pr').value);
@@ -781,7 +817,7 @@ async function saveConfig() {
   updateFXLabels();
   showNotif('✓ Configuración guardada en la nube.');
 }
-
+ 
 // ─── ELIMINAR USUARIO ─────────────────────────────────────────────
 let pendingDeleteId = null;
 function askDelete(uid) {
@@ -800,12 +836,12 @@ async function confirmDelete() {
   await renderAdmin();
   showNotif('Usuario eliminado correctamente.');
 }
-
+ 
 // ─── CIERRE DE MODALES ────────────────────────────────────────────
 document.querySelectorAll('.modal-overlay').forEach(m => {
   m.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
 });
-
+ 
 // ─── ARRANQUE ─────────────────────────────────────────────────────
 init();
 
