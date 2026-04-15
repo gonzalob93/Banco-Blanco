@@ -92,7 +92,7 @@ async function ensureConfig() {
   const ref = db.collection('config').doc('global');
   const snap = await ref.get();
   if (!snap.exists) {
-    const defaults = { tasaPF: 10, tasaPR: 15, tasaMora: 5, tcCompra: 1370, tcVenta: 1400, tasaDescubierto: 50 };
+    const defaults = { tasaPF: 10, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tcCompra: 1370, tcVenta: 1400 };
     await ref.set(defaults);
     localConfig = defaults;
   } else {
@@ -285,35 +285,39 @@ async function procesarVencimientos() {
  
 // ─── DASHBOARD ────────────────────────────────────────────────────
 function userTab(tab) {
-  document.querySelectorAll('.user-nav-tab').forEach((t, i) =>
-    t.classList.toggle('active', ['home', 'divisas', 'prestamos', 'plazos'][i] === tab)
-  );
-  ['home', 'divisas', 'prestamos', 'plazos'].forEach(t =>
-    document.getElementById('utab-' + t).style.display = t === tab ? '' : 'none'
-  );
-  if (tab === 'divisas') renderDivisasTab();
-  if (tab === 'prestamos') renderPrestamosUser();
-  if (tab === 'plazos') renderPlazosUser();
+  const TABS = ['home','divisas','prestamos','plazos','inversiones','historial'];
+  document.querySelectorAll('.user-nav-tab').forEach((t,i) => t.classList.toggle('active', TABS[i] === tab));
+  TABS.forEach(t => document.getElementById('utab-' + t).style.display = t === tab ? '' : 'none');
+  if (tab === 'divisas')    renderDivisasTab();
+  if (tab === 'prestamos')  renderPrestamosUser();
+  if (tab === 'plazos')     renderPlazosUser();
+  if (tab === 'inversiones') renderInversiones();
+  if (tab === 'historial')  renderHistorial();
 }
  
 function renderDashboard() {
   if (!currentUser) return;
   document.getElementById('topbar-avatar').textContent = currentUser.name[0].toUpperCase();
   document.getElementById('topbar-uname').textContent = currentUser.name;
-  const balEl = document.getElementById('dash-balance-ars');
-  const bal = currentUser.balance || 0;
-  balEl.textContent = fmtARS(bal);
-  balEl.style.color = bal < 0 ? '#ef5350' : '#ffffff';
-  const descInfoEl = document.getElementById('dash-descubierto-info');
-  if (descInfoEl) {
-    if (bal < 0) {
-      const limite = limiteDescubierto(currentUser);
-      const intereses = calcularInteresesDescubierto(currentUser);
-      const disponible = limite + bal;
-      descInfoEl.style.display = '';
-      descInfoEl.innerHTML = 'Giro en descubierto · Disponible: ' + fmtARS(Math.max(0, disponible)) + ' · Int. acumulados: ' + fmtARS(intereses);
+  const _bal = currentUser.balance || 0;
+  const _balEl = document.getElementById('dash-balance-ars');
+  _balEl.textContent = fmtARS(_bal);
+  _balEl.style.color = _bal < 0 ? '#ef5350' : '#ffffff';
+  const _descEl = document.getElementById('dash-descubierto-info');
+  if (_descEl) {
+    if (_bal < 0) {
+      const _lim = (currentUser.limiteDescubierto != null) ? currentUser.limiteDescubierto : 50000;
+      const _tna = (localConfig.tasaDescubierto || 50) / 100;
+      const _int = currentUser.descubierto && currentUser.descubierto.fechaInicio
+        ? (function() {
+            const parts = currentUser.descubierto.fechaInicio.split('/');
+            const dias = Math.max(0, Math.floor((new Date() - new Date(+parts[2], +parts[1]-1, +parts[0])) / 86400000));
+            return Math.abs(_bal) * _tna * (dias / 365);
+          })() : 0;
+      _descEl.style.display = '';
+      _descEl.innerHTML = 'Giro en descubierto · Disponible: ' + fmtARS(Math.max(0, _lim + _bal)) + ' · Int. acumulados: ' + fmtARS(_int);
     } else {
-      descInfoEl.style.display = 'none';
+      _descEl.style.display = 'none';
     }
   }
   document.getElementById('dash-accnum').textContent = currentUser.accountNum;
@@ -340,7 +344,7 @@ function renderTxList() {
   const el = document.getElementById('tx-list');
   const txs = [...(currentUser.transactions || [])].reverse();
   if (!txs.length) { el.innerHTML = '<div class="empty-state">No hay movimientos aún.</div>'; return; }
-  el.innerHTML = txs.slice(0, 15).map(tx => {
+  el.innerHTML = txs.slice(0, 5).map(tx => {
     const cls = tx.type === 'credit' ? 'credit' : 'debit';
     const icon = tx.type === 'credit' ? '↙' : '↗';
     return `<div class="tx-item">
@@ -474,86 +478,6 @@ async function doTransferUSD() {
 }
  
 // ─── OPERACIONES ARS ─────────────────────────────────────────────
- 
-// ════════════════════════════════════════════════════════════════
-//  MÓDULO DE GIRO EN DESCUBIERTO
-// ════════════════════════════════════════════════════════════════
- 
-// Convierte string dd/mm/yyyy → Date
-function parseDateStr(s) {
-  const [d, m, y] = s.split('/');
-  return new Date(+y, +m - 1, +d);
-}
- 
-// Límite de descubierto del usuario (con fallback al default de $50.000)
-function limiteDescubierto(user) {
-  return user.limiteDescubierto != null ? user.limiteDescubierto : 50000;
-}
- 
-// Saldo disponible real = balance + límite de descubierto
-function saldoDisponibleDescubierto(user) {
-  return (user.balance || 0) + limiteDescubierto(user);
-}
- 
-// Calcula intereses acumulados de descubierto hasta hoy
-// Se cobran solo si el saldo es negativo
-function calcularInteresesDescubierto(user) {
-  if (!user.descubierto || !user.descubierto.fechaInicio) return 0;
-  if ((user.balance || 0) >= 0) return 0;
-  const inicio = parseDateStr(user.descubierto.fechaInicio);
-  const ahora = today();
-  const dias = Math.max(0, Math.floor((ahora - inicio) / (1000 * 60 * 60 * 24)));
-  const saldoNeg = Math.abs(user.balance);
-  const tna = localConfig.tasaDescubierto / 100;
-  return saldoNeg * tna * (dias / 365);
-}
- 
-// Construye el objeto descubierto actualizado cuando el saldo pasa a negativo
-function descubiertoInicio(user) {
-  if (user.descubierto && user.descubierto.fechaInicio) return user.descubierto;
-  return { fechaInicio: todayStr() };
-}
- 
-// Genera las updates de Firestore al aplicar un crédito sobre cuenta en descubierto.
-// Devuelve { nuevoBalance, txsExtra, descubiertoUpdate }
-function procesarCobertura(user, montoCredito) {
-  const balanceActual = user.balance || 0;
-  // Solo aplica si estaba en descubierto
-  if (balanceActual >= 0) return { nuevoBalance: balanceActual + montoCredito, txsExtra: [], descubiertoUpdate: null };
- 
-  const intereses = calcularInteresesDescubierto(user);
-  const txsExtra = [];
-  let restante = montoCredito;
-  let nuevoBalance = balanceActual;
- 
-  // Cobrar intereses primero si hay fondos
-  if (intereses > 0 && restante > 0) {
-    const intCobrado = Math.min(intereses, restante);
-    nuevoBalance -= intCobrado;
-    restante -= intCobrado;
-    txsExtra.push({
-      id: Date.now(),
-      type: 'debit',
-      desc: 'Intereses por giro en descubierto (' + localConfig.tasaDescubierto + '% TNA)',
-      amount: parseFloat(intCobrado.toFixed(2)),
-      date: todayStr()
-    });
-  }
- 
-  // Aplicar el resto del crédito
-  nuevoBalance += restante;
- 
-  // Si todavía queda en negativo, reiniciar fecha del descubierto
-  let descubiertoUpdate = null;
-  if (nuevoBalance < 0) {
-    descubiertoUpdate = { fechaInicio: todayStr() };
-  } else {
-    descubiertoUpdate = null; // ya salió del descubierto
-  }
- 
-  return { nuevoBalance: parseFloat(nuevoBalance.toFixed(2)), txsExtra, descubiertoUpdate };
-}
- 
 async function doTransfer() {
   const dest = document.getElementById('tf-dest').value.trim().toLowerCase();
   const amount = parseFloat(document.getElementById('tf-amount').value);
@@ -561,10 +485,10 @@ async function doTransfer() {
   if (!dest) { err.textContent = 'Ingresá el usuario destinatario.'; err.classList.add('show'); return; }
   if (dest === currentUser.id) { err.textContent = 'No podés transferirte a vos mismo.'; err.classList.add('show'); return; }
   if (!amount || amount <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
-  // Verificar límite considerando descubierto
-  const disponible = saldoDisponibleDescubierto(currentUser);
-  if (amount > disponible) {
-    err.textContent = 'Superás el límite disponible. Máximo a transferir: ' + fmtARS(disponible) + '.';
+  const _limDesc = (currentUser.limiteDescubierto != null) ? currentUser.limiteDescubierto : 50000;
+  const _disponible = (currentUser.balance || 0) + _limDesc;
+  if (amount > _disponible) {
+    err.textContent = 'Superás el límite disponible. Máximo: ' + fmtARS(Math.max(0, _disponible)) + '.';
     err.classList.add('show'); return;
   }
   const targetSnap = await db.collection('users').doc(dest).get();
@@ -572,18 +496,17 @@ async function doTransfer() {
   const target = targetSnap.data();
   const txId = (currentUser.txCounter || 200) + 1;
   const d = todayStr();
-  const nuevoBalance = parseFloat(((currentUser.balance || 0) - amount).toFixed(2));
-  // Si el nuevo saldo es negativo, registrar inicio del descubierto
-  const descubiertoUpdate = nuevoBalance < 0 ? descubiertoInicio(currentUser) : null;
-  const updateData = {
-    balance: nuevoBalance,
-    txCounter: txId,
+  const _nuevoBalTf = parseFloat(((currentUser.balance || 0) - amount).toFixed(2));
+  const _tfUpdate = {
+    balance: _nuevoBalTf, txCounter: txId,
     transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia a ' + target.name, amount, date: d }),
   };
-  if (descubiertoUpdate) updateData.descubierto = descubiertoUpdate;
-  if (nuevoBalance >= 0) updateData.descubierto = null;
+  if (_nuevoBalTf < 0 && !(currentUser.descubierto && currentUser.descubierto.fechaInicio)) {
+    _tfUpdate.descubierto = { fechaInicio: todayStr() };
+  }
+  if (_nuevoBalTf >= 0) _tfUpdate.descubierto = null;
   const batch = db.batch();
-  batch.update(db.collection('users').doc(currentUser.id), updateData);
+  batch.update(db.collection('users').doc(currentUser.id), _tfUpdate);
   batch.update(db.collection('users').doc(dest), {
     balance: (target.balance || 0) + amount,
     transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Transferencia de ' + currentUser.name, amount, date: d }),
@@ -592,7 +515,7 @@ async function doTransfer() {
   closeModal('transfer');
   document.getElementById('tf-dest').value = '';
   document.getElementById('tf-amount').value = '';
-  if (nuevoBalance < 0) showNotif('✓ Transferencia realizada. Saldo en descubierto: ' + fmtARS(nuevoBalance), 'warn');
+  if (_nuevoBalTf < 0) showNotif('✓ Transferencia realizada. Saldo en descubierto: ' + fmtARS(_nuevoBalTf), 'warn');
   else showNotif('✓ Transferiste ' + fmtARS(amount) + ' a ' + target.name);
 }
  
@@ -601,18 +524,31 @@ async function doDeposit() {
   const err = document.getElementById('dep-error'); err.classList.remove('show');
   if (!amount || amount <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
   const txId = (currentUser.txCounter || 200) + 1;
-  const { nuevoBalance, txsExtra, descubiertoUpdate } = procesarCobertura(currentUser, amount);
-  const txPrincipal = { id: txId, type: 'credit', desc: 'Depósito propio', amount, date: todayStr() };
-  const todasTxs = [txPrincipal, ...txsExtra];
-  const updateData = { balance: nuevoBalance, txCounter: txId };
-  todasTxs.forEach(tx => {
-    updateData.transactions = firebase.firestore.FieldValue.arrayUnion(tx);
-  });
-  if (descubiertoUpdate !== undefined) updateData.descubierto = descubiertoUpdate;
-  await db.collection('users').doc(currentUser.id).update(updateData);
+  const _balAntes = currentUser.balance || 0;
+  // Calcular intereses si venía en descubierto
+  let _intereses = 0;
+  if (_balAntes < 0 && currentUser.descubierto && currentUser.descubierto.fechaInicio) {
+    const _parts = currentUser.descubierto.fechaInicio.split('/');
+    const _dias = Math.max(0, Math.floor((new Date() - new Date(+_parts[2], +_parts[1]-1, +_parts[0])) / 86400000));
+    _intereses = parseFloat((Math.abs(_balAntes) * ((localConfig.tasaDescubierto || 50) / 100) * (_dias / 365)).toFixed(2));
+  }
+  // El crédito primero cubre intereses, luego el saldo negativo
+  const _intCobrado = Math.min(_intereses, Math.max(0, amount));
+  const _nuevoBalDep = parseFloat((_balAntes - _intCobrado + amount).toFixed(2));
+  const _depUpdate = { balance: _nuevoBalDep, txCounter: txId };
+  // Tx principal
+  _depUpdate.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Depósito propio', amount, date: todayStr() });
+  // Tx de intereses cobrados (si aplica)
+  if (_intCobrado > 0) {
+    _depUpdate.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Intereses por giro en descubierto (' + (localConfig.tasaDescubierto || 50) + '% TNA)', amount: _intCobrado, date: todayStr() });
+  }
+  // Actualizar estado del descubierto
+  if (_nuevoBalDep >= 0) { _depUpdate.descubierto = null; }
+  else if (_intCobrado > 0) { _depUpdate.descubierto = { fechaInicio: todayStr() }; } // reiniciar contador
+  await db.collection('users').doc(currentUser.id).update(_depUpdate);
   closeModal('deposit');
   document.getElementById('dep-amount').value = '';
-  if (txsExtra.length) showNotif('✓ Depósito realizado. Se cobraron intereses por descubierto: ' + fmtARS(txsExtra[0].amount), 'warn');
+  if (_intCobrado > 0) showNotif('✓ Depósito realizado. Intereses cobrados: ' + fmtARS(_intCobrado), 'warn');
   else showNotif('✓ Depósito de ' + fmtARS(amount) + ' realizado');
 }
  
@@ -757,23 +693,21 @@ function renderAdminStats() {
 function renderAdminUsers() {
   document.getElementById('admin-users-body').innerHTML = allUsers.map(u => {
     const bal = u.balance || 0;
-    const limite = u.limiteDescubierto != null ? u.limiteDescubierto : 50000;
+    const lim = u.limiteDescubierto != null ? u.limiteDescubierto : 50000;
     const enDesc = bal < 0;
-    const balColor = enDesc ? 'color:var(--red)' : 'color:var(--green)';
-    const descInfo = enDesc
-      ? `<div style="font-size:10px;color:var(--red);margin-top:2px;">Descubierto · ${calcularInteresesDescubierto(u) > 0 ? 'Int. acum: ' + fmtARS(calcularInteresesDescubierto(u)) : 'sin intereses aún'}</div>`
-      : '';
+    const balColor = enDesc ? 'color:#e53935' : 'color:var(--green)';
+    const descExtra = enDesc ? `<div style="font-size:10px;color:#e53935;margin-top:2px;">En descubierto desde ${u.descubierto && u.descubierto.fechaInicio ? u.descubierto.fechaInicio : '—'}</div>` : '';
     return `<tr>
       <td><strong>${u.id}</strong></td>
       <td>${u.name}</td>
-      <td><strong style="${balColor}">${fmtARS(bal)}</strong>${descInfo}</td>
+      <td><strong style="${balColor}">${fmtARS(bal)}</strong>${descExtra}</td>
       <td><div class="amount-input-row">
         <input type="number" id="adj-ars-${u.id}" placeholder="Monto" min="0"/>
         <button class="btn-sm btn-add" onclick="adminAdjustARS('${u.id}','add')">+ ARS</button>
         <button class="btn-sm btn-sub" onclick="adminAdjustARS('${u.id}','sub')">− ARS</button>
       </div></td>
       <td>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">Límite: ${fmtARS(limite)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Límite: <strong>${fmtARS(lim)}</strong></div>
         <div class="amount-input-row">
           <input type="number" id="adj-lim-${u.id}" placeholder="Nuevo límite" min="0"/>
           <button class="btn-sm btn-add" onclick="adminSetLimite('${u.id}')">Setear</button>
@@ -792,11 +726,11 @@ function renderAdminUsers() {
  
 async function adminSetLimite(uid) {
   const inp = document.getElementById('adj-lim-' + uid);
-  const limite = parseFloat(inp.value);
-  if (isNaN(limite) || limite < 0) { showNotif('Ingresá un límite válido (0 o más).', 'error'); return; }
-  await db.collection('users').doc(uid).update({ limiteDescubierto: limite });
+  const lim = parseFloat(inp.value);
+  if (isNaN(lim) || lim < 0) { showNotif('Ingresá un límite válido (0 o más).', 'error'); return; }
+  await db.collection('users').doc(uid).update({ limiteDescubierto: lim });
   inp.value = '';
-  showNotif('✓ Límite de descubierto actualizado a ' + fmtARS(limite));
+  showNotif('✓ Límite de descubierto actualizado a ' + fmtARS(lim));
   await renderAdmin();
 }
  
@@ -806,28 +740,37 @@ async function adminAdjustARS(uid, mode) {
   if (!amount || amount <= 0) { showNotif('Ingresá un monto válido.', 'error'); return; }
   const snap = await db.collection('users').doc(uid).get();
   const u = snap.data();
+  const _uBal = u.balance || 0;
+  const _uLim = (u.limiteDescubierto != null) ? u.limiteDescubierto : 50000;
   if (mode === 'add') {
-    // Crédito: procesar cobertura de descubierto si aplica
-    const { nuevoBalance, txsExtra, descubiertoUpdate } = procesarCobertura(u, amount);
-    const txPrincipal = { id: Date.now(), type: 'credit', desc: 'Ajuste ARS por administrador (+)', amount, date: todayStr() };
-    const updateData = { balance: nuevoBalance };
-    [txPrincipal, ...txsExtra].forEach(tx => { updateData.transactions = firebase.firestore.FieldValue.arrayUnion(tx); });
-    if (descubiertoUpdate !== undefined) updateData.descubierto = descubiertoUpdate;
-    await db.collection('users').doc(uid).update(updateData);
-    showNotif('✓ Se agregaron ' + fmtARS(amount) + ' a ' + u.name + (txsExtra.length ? ' (intereses cobrados)' : ''));
+    // Calcular intereses si venía en descubierto
+    let _int = 0;
+    if (_uBal < 0 && u.descubierto && u.descubierto.fechaInicio) {
+      const _p = u.descubierto.fechaInicio.split('/');
+      const _dias = Math.max(0, Math.floor((new Date() - new Date(+_p[2], +_p[1]-1, +_p[0])) / 86400000));
+      _int = parseFloat((Math.abs(_uBal) * ((localConfig.tasaDescubierto || 50) / 100) * (_dias / 365)).toFixed(2));
+    }
+    const _intCob = Math.min(_int, Math.max(0, amount));
+    const _nuevoB = parseFloat((_uBal - _intCob + amount).toFixed(2));
+    const _upd = { balance: _nuevoB };
+    _upd.transactions = firebase.firestore.FieldValue.arrayUnion({ id: Date.now(), type: 'credit', desc: 'Ajuste ARS por administrador (+)', amount, date: todayStr() });
+    if (_intCob > 0) _upd.transactions = firebase.firestore.FieldValue.arrayUnion({ id: Date.now()+1, type: 'debit', desc: 'Intereses por giro en descubierto (' + (localConfig.tasaDescubierto||50) + '% TNA)', amount: _intCob, date: todayStr() });
+    if (_nuevoB >= 0) _upd.descubierto = null;
+    else if (_intCob > 0) _upd.descubierto = { fechaInicio: todayStr() };
+    await db.collection('users').doc(uid).update(_upd);
+    showNotif('✓ Se agregaron ' + fmtARS(amount) + ' a ' + u.name + (_intCob > 0 ? '. Intereses cobrados: ' + fmtARS(_intCob) : ''));
   } else {
     // Débito: verificar límite de descubierto
-    const disponible = saldoDisponibleDescubierto(u);
-    if (amount > disponible) { showNotif('Supera el límite de descubierto del usuario.', 'error'); return; }
-    const nuevoBalance = parseFloat(((u.balance || 0) - amount).toFixed(2));
-    const descubiertoUpdate = nuevoBalance < 0 ? (u.descubierto && u.descubierto.fechaInicio ? u.descubierto : { fechaInicio: todayStr() }) : null;
-    const updateData = {
-      balance: nuevoBalance,
+    if (amount > _uBal + _uLim) { showNotif('Supera el límite de descubierto (' + fmtARS(_uLim) + ').', 'error'); return; }
+    const _nuevoB = parseFloat((_uBal - amount).toFixed(2));
+    const _upd = {
+      balance: _nuevoB,
       transactions: firebase.firestore.FieldValue.arrayUnion({ id: Date.now(), type: 'debit', desc: 'Ajuste ARS por administrador (−)', amount, date: todayStr() }),
     };
-    if (descubiertoUpdate !== undefined) updateData.descubierto = descubiertoUpdate;
-    await db.collection('users').doc(uid).update(updateData);
-    showNotif('✓ Se quitaron ' + fmtARS(amount) + ' de ' + u.name + (nuevoBalance < 0 ? ' (en descubierto)' : ''));
+    if (_nuevoB < 0 && !(u.descubierto && u.descubierto.fechaInicio)) _upd.descubierto = { fechaInicio: todayStr() };
+    if (_nuevoB >= 0) _upd.descubierto = null;
+    await db.collection('users').doc(uid).update(_upd);
+    showNotif('✓ Se quitaron ' + fmtARS(amount) + ' de ' + u.name + (_nuevoB < 0 ? ' (en descubierto)' : ''));
   }
   inp.value = '';
   await renderAdmin();
@@ -949,6 +892,339 @@ async function confirmDelete() {
   closeModal('confirm-delete');
   await renderAdmin();
   showNotif('Usuario eliminado correctamente.');
+}
+ 
+ 
+// ════════════════════════════════════════════════════════════════
+//  MÓDULO DE INVERSIONES
+// ════════════════════════════════════════════════════════════════
+ 
+const PROXY = 'https://byma-proxy.gonzalob1993.workers.dev';
+ 
+const ACCIONES_LIDERES = [
+  { ticker: 'GGAL.BA',  nombre: 'Grupo Financiero Galicia' },
+  { ticker: 'YPFD.BA',  nombre: 'YPF S.A.' },
+  { ticker: 'PAMP.BA',  nombre: 'Pampa Energía' },
+  { ticker: 'BMA.BA',   nombre: 'Banco Macro' },
+  { ticker: 'BBAR.BA',  nombre: 'BBVA Argentina' },
+  { ticker: 'TECO2.BA', nombre: 'Telecom Argentina' },
+  { ticker: 'LOMA.BA',  nombre: 'Loma Negra' },
+  { ticker: 'ALUA.BA',  nombre: 'Aluar Aluminio' },
+  { ticker: 'TXAR.BA',  nombre: 'Ternium Argentina' },
+  { ticker: 'CRES.BA',  nombre: 'Cresud' },
+];
+ 
+const CEDEARS_DESTACADOS = [
+  { ticker: 'AAPL',  nombre: 'Apple Inc.' },
+  { ticker: 'MSFT',  nombre: 'Microsoft Corp.' },
+  { ticker: 'GOOGL', nombre: 'Alphabet (Google)' },
+  { ticker: 'TSLA',  nombre: 'Tesla Inc.' },
+  { ticker: 'AMZN',  nombre: 'Amazon.com Inc.' },
+  { ticker: 'NVDA',  nombre: 'NVIDIA Corp.' },
+];
+ 
+let cotizaciones = {};
+let pendingInvAccion = null;
+ 
+// ─── CUENTA COMITENTE ─────────────────────────────────────────────
+async function abrirCuentaComitente() {
+  if (currentUser.accountNumComitente) return;
+  const num = 'CC-' + String(Math.floor(Math.random() * 900000) + 100000);
+  await db.collection('users').doc(currentUser.id).update({ accountNumComitente: num });
+  showNotif('✓ Cuenta Comitente abierta: ' + num, 'success');
+  renderInversiones();
+}
+ 
+// ─── FETCH COTIZACIÓN ─────────────────────────────────────────────
+async function fetchCotizacion(ticker) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`;
+  const proxyUrl = `${PROXY}/?url=${encodeURIComponent(url)}`;
+  const res = await fetch(proxyUrl);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const result = data.chart.result[0];
+  const meta = result.meta;
+  const closes = result.indicators.quote[0].close.filter(Boolean);
+  const lastPrice = closes.slice(-1)[0] || meta.regularMarketPrice;
+  const prevClose = meta.chartPreviousClose || meta.previousClose || closes.slice(-2)[0] || lastPrice;
+  const change = lastPrice - prevClose;
+  const changePct = prevClose ? (change / prevClose) * 100 : 0;
+  return {
+    price: lastPrice, prevClose, change, changePct,
+    name: meta.longName || meta.shortName || ticker,
+    currency: meta.currency,
+    volume: result.indicators.quote[0].volume?.slice(-1)[0] || 0,
+    exchange: meta.exchangeName,
+  };
+}
+ 
+// ─── RENDER LISTA DE COTIZACIONES ────────────────────────────────
+async function cargarCotizaciones(lista, elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = '<div class="loading-quotes">⏳ Cargando cotizaciones...</div>';
+  const cards = [];
+  for (const item of lista) {
+    try {
+      const q = await fetchCotizacion(item.ticker);
+      cotizaciones[item.ticker] = q;
+      cards.push(buildQuoteCard(item.ticker, q));
+    } catch(e) {
+      cards.push(`<div class="quote-card"><div class="quote-left"><div class="quote-ticker">${item.ticker.replace('.BA','')}</div><div class="quote-name">${item.nombre}</div></div><div style="font-size:12px;color:var(--text3)">Sin datos disponibles</div></div>`);
+    }
+  }
+  el.innerHTML = cards.join('');
+}
+ 
+function buildQuoteCard(ticker, q) {
+  const pos = q.changePct >= 0;
+  const sign = pos ? '+' : '';
+  const tenencia = (currentUser.inversiones || []).find(i => i.ticker === ticker);
+  const nombreSeguro = (q.name || ticker).replace(/'/g, '&#39;');
+  return `<div class="quote-card">
+    <div class="quote-left">
+      <div class="quote-ticker">${ticker.replace('.BA','')}</div>
+      <div class="quote-name">${q.name}${q.exchange ? ' · ' + q.exchange : ''}</div>
+      <div class="quote-vol">Vol: ${Number(q.volume).toLocaleString('es-AR')}</div>
+    </div>
+    <div class="quote-center">
+      <div class="quote-price">${fmtARS(q.price)}</div>
+      <div class="quote-change ${pos?'pos':'neg'}">${sign}${fmtARS(q.change)} (${sign}${q.changePct.toFixed(2)}%)</div>
+      ${tenencia ? `<div style="font-size:10px;color:var(--blue);margin-top:2px;">Tenés ${tenencia.cantidad} acc.</div>` : ''}
+    </div>
+    <div class="quote-right">
+      <button class="btn-comprar" onclick="abrirCompra('${ticker}','${nombreSeguro}')">Comprar</button>
+      ${tenencia ? `<button class="btn-vender" onclick="abrirVenta('${ticker}','${nombreSeguro}')">Vender</button>` : ''}
+    </div>
+  </div>`;
+}
+ 
+// ─── BÚSQUEDA LIBRE (no toca la lista de líderes) ────────────────
+async function buscarTicker() {
+  let input = document.getElementById('inv-search-input').value.trim().toUpperCase();
+  if (!input) return;
+  // Si parece ticker local (sin punto, ≤6 chars), agrega .BA
+  if (!input.includes('.') && input.length <= 6) input += '.BA';
+ 
+  const resDiv = document.getElementById('inv-resultado');
+  const resEl  = document.getElementById('quotes-resultado');
+  resDiv.style.display = '';
+  resEl.innerHTML = `<div class="loading-quotes">⏳ Buscando ${input}...</div>`;
+ 
+  try {
+    const q = await fetchCotizacion(input);
+    cotizaciones[input] = q;
+    resEl.innerHTML = buildQuoteCard(input, q);
+  } catch(e) {
+    resEl.innerHTML = `<div class="empty-state">No se encontró el ticker <strong>${input}</strong>. Verificá que sea correcto.</div>`;
+  }
+}
+ 
+function limpiarBusqueda() {
+  document.getElementById('inv-resultado').style.display = 'none';
+  document.getElementById('inv-search-input').value = '';
+}
+ 
+// ─── SUB-TABS ─────────────────────────────────────────────────────
+function invSubTab(tab) {
+  document.querySelectorAll('.inv-tab').forEach((t, i) =>
+    t.classList.toggle('active', ['mercado', 'portafolio'][i] === tab)
+  );
+  document.getElementById('inv-mercado').style.display   = tab === 'mercado'   ? '' : 'none';
+  document.getElementById('inv-portafolio').style.display = tab === 'portafolio' ? '' : 'none';
+  if (tab === 'portafolio') renderPortafolio();
+}
+ 
+// ─── RENDER PESTAÑA PRINCIPAL ─────────────────────────────────────
+function renderInversiones() {
+  const hasComitente = !!currentUser.accountNumComitente;
+  document.getElementById('comitente-cerrado').style.display  = hasComitente ? 'none' : '';
+  document.getElementById('comitente-abierto').style.display  = hasComitente ? '' : 'none';
+  if (!hasComitente) return;
+  invSubTab('mercado');
+  cargarCotizaciones(ACCIONES_LIDERES, 'quotes-lideres');
+  cargarCotizaciones(CEDEARS_DESTACADOS, 'quotes-cedears');
+}
+ 
+// ─── PORTAFOLIO ───────────────────────────────────────────────────
+async function renderPortafolio() {
+  const el = document.getElementById('port-list');
+  const inversiones = currentUser.inversiones || [];
+  if (!inversiones.length) {
+    el.innerHTML = '<div class="empty-state">No tenés posiciones abiertas.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="loading-quotes">⏳ Actualizando precios...</div>';
+  const cards = [];
+  let totalActual = 0, totalCosto = 0;
+  for (const inv of inversiones) {
+    let precioActual = cotizaciones[inv.ticker]?.price;
+    if (!precioActual) {
+      try { const q = await fetchCotizacion(inv.ticker); cotizaciones[inv.ticker] = q; precioActual = q.price; }
+      catch(e) { precioActual = inv.precioPromedio; }
+    }
+    const valorActual = precioActual * inv.cantidad;
+    const costo = inv.precioPromedio * inv.cantidad;
+    const pnl = valorActual - costo;
+    const pnlPct = (pnl / costo) * 100;
+    totalActual += valorActual; totalCosto += costo;
+    const pos = pnl >= 0;
+    const nombreSeguro = (inv.nombre||inv.ticker).replace(/'/g, '&#39;');
+    cards.push(`<div class="port-card">
+      <div class="port-left">
+        <div class="port-ticker">${inv.ticker.replace('.BA','')} <span style="font-weight:400;font-size:11px;color:var(--text3)">× ${inv.cantidad} acc.</span></div>
+        <div class="port-detail">P. promedio: ${fmtARS(inv.precioPromedio)} · Actual: ${fmtARS(precioActual)}</div>
+      </div>
+      <div class="port-right">
+        <div class="port-valor">${fmtARS(valorActual)}</div>
+        <div class="port-pnl ${pos?'pos':'neg'}">${pos?'+':''}${fmtARS(pnl)} (${pos?'+':''}${pnlPct.toFixed(2)}%)</div>
+        <button class="btn-vender" style="margin-top:4px" onclick="abrirVenta('${inv.ticker}','${nombreSeguro}')">Vender</button>
+      </div>
+    </div>`);
+  }
+  const pnlTotal = totalActual - totalCosto;
+  const pnlTotalPos = pnlTotal >= 0;
+  el.innerHTML = `
+    <div style="background:var(--navy);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;">
+      <div><div style="font-size:10px;color:rgba(255,255,255,.5);letter-spacing:2px;font-weight:700;">VALOR TOTAL</div>
+      <div style="font-size:24px;color:#fff;font-weight:700;">${fmtARS(totalActual)}</div></div>
+      <div style="text-align:right;">
+        <div style="font-size:13px;font-weight:700;color:${pnlTotalPos?'#81c784':'#e57373'};">${pnlTotalPos?'+':''}${fmtARS(pnlTotal)}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">resultado total</div>
+      </div>
+    </div>${cards.join('')}`;
+}
+ 
+// ─── MODALES COMPRA / VENTA ───────────────────────────────────────
+function abrirCompra(ticker, nombre) {
+  pendingInvAccion = { ticker, nombre };
+  const q = cotizaciones[ticker];
+  document.getElementById('modal-comprar-title').textContent = 'Comprar ' + ticker.replace('.BA','');
+  document.getElementById('modal-comprar-info').innerHTML =
+    `<strong>${nombre}</strong><br>Precio actual: <strong>${q ? fmtARS(q.price) : '...'}</strong> · Saldo disponible: <strong>${fmtARS(currentUser.balance)}</strong>`;
+  document.getElementById('comprar-qty').value = '';
+  document.getElementById('comprar-sim').style.display = 'none';
+  document.getElementById('comprar-error').classList.remove('show');
+  openModal('comprar-accion');
+}
+ 
+function simCompraAccion() {
+  const qty = parseInt(document.getElementById('comprar-qty').value);
+  const sim = document.getElementById('comprar-sim');
+  if (!qty || qty <= 0 || !pendingInvAccion) { sim.style.display = 'none'; return; }
+  const q = cotizaciones[pendingInvAccion.ticker];
+  if (!q) return;
+  sim.style.display = '';
+  document.getElementById('comprar-sim-precio').textContent = fmtARS(q.price);
+  document.getElementById('comprar-sim-qty').textContent = qty + ' acciones';
+  document.getElementById('comprar-sim-total').textContent = fmtARS(q.price * qty);
+}
+ 
+async function doComprarAccion() {
+  const qty = parseInt(document.getElementById('comprar-qty').value);
+  const err = document.getElementById('comprar-error'); err.classList.remove('show');
+  if (!qty || qty <= 0) { err.textContent = 'Ingresá una cantidad válida.'; err.classList.add('show'); return; }
+  const q = cotizaciones[pendingInvAccion.ticker];
+  if (!q) { err.textContent = 'Sin precio disponible.'; err.classList.add('show'); return; }
+  const total = q.price * qty;
+  if (total > currentUser.balance) { err.textContent = 'Saldo insuficiente (necesitás ' + fmtARS(total) + ').'; err.classList.add('show'); return; }
+  const txId = (currentUser.txCounter || 200) + 1;
+  let inversiones = [...(currentUser.inversiones || [])];
+  const idx = inversiones.findIndex(i => i.ticker === pendingInvAccion.ticker);
+  if (idx >= 0) {
+    const prev = inversiones[idx];
+    const nuevaCantidad = prev.cantidad + qty;
+    inversiones[idx] = { ...prev, cantidad: nuevaCantidad, precioPromedio: ((prev.precioPromedio * prev.cantidad) + (q.price * qty)) / nuevaCantidad };
+  } else {
+    inversiones.push({ ticker: pendingInvAccion.ticker, nombre: pendingInvAccion.nombre, cantidad: qty, precioPromedio: q.price });
+  }
+  await db.collection('users').doc(currentUser.id).update({
+    balance: currentUser.balance - total, inversiones, txCounter: txId,
+    transactions: firebase.firestore.FieldValue.arrayUnion({
+      id: txId, type: 'debit',
+      desc: `Compra ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`,
+      amount: total, date: todayStr()
+    }),
+  });
+  closeModal('comprar-accion');
+  showNotif(`✓ Compraste ${qty} acc. de ${pendingInvAccion.ticker.replace('.BA','')} por ${fmtARS(total)}`);
+}
+ 
+function abrirVenta(ticker, nombre) {
+  pendingInvAccion = { ticker, nombre };
+  const q = cotizaciones[ticker];
+  const tenencia = (currentUser.inversiones || []).find(i => i.ticker === ticker);
+  document.getElementById('modal-vender-title').textContent = 'Vender ' + ticker.replace('.BA','');
+  document.getElementById('modal-vender-info').innerHTML =
+    `<strong>${nombre}</strong><br>Precio actual: <strong>${q ? fmtARS(q.price) : '...'}</strong> · Tenés: <strong>${tenencia?.cantidad || 0} acciones</strong>`;
+  document.getElementById('vender-qty').value = '';
+  document.getElementById('vender-sim').style.display = 'none';
+  document.getElementById('vender-error').classList.remove('show');
+  openModal('vender-accion');
+}
+ 
+function simVentaAccion() {
+  const qty = parseInt(document.getElementById('vender-qty').value);
+  const sim = document.getElementById('vender-sim');
+  if (!qty || qty <= 0 || !pendingInvAccion) { sim.style.display = 'none'; return; }
+  const q = cotizaciones[pendingInvAccion.ticker];
+  if (!q) return;
+  sim.style.display = '';
+  document.getElementById('vender-sim-precio').textContent = fmtARS(q.price);
+  document.getElementById('vender-sim-qty').textContent = qty + ' acciones';
+  document.getElementById('vender-sim-total').textContent = fmtARS(q.price * qty);
+}
+ 
+async function doVenderAccion() {
+  const qty = parseInt(document.getElementById('vender-qty').value);
+  const err = document.getElementById('vender-error'); err.classList.remove('show');
+  if (!qty || qty <= 0) { err.textContent = 'Ingresá una cantidad válida.'; err.classList.add('show'); return; }
+  const tenencia = (currentUser.inversiones || []).find(i => i.ticker === pendingInvAccion.ticker);
+  if (!tenencia || qty > tenencia.cantidad) { err.textContent = `Solo tenés ${tenencia?.cantidad || 0} acciones.`; err.classList.add('show'); return; }
+  const q = cotizaciones[pendingInvAccion.ticker];
+  if (!q) { err.textContent = 'Sin precio disponible.'; err.classList.add('show'); return; }
+  const total = q.price * qty;
+  const txId = (currentUser.txCounter || 200) + 1;
+  let inversiones = [...(currentUser.inversiones || [])];
+  const idx = inversiones.findIndex(i => i.ticker === pendingInvAccion.ticker);
+  if (tenencia.cantidad - qty <= 0) { inversiones.splice(idx, 1); }
+  else { inversiones[idx] = { ...tenencia, cantidad: tenencia.cantidad - qty }; }
+  await db.collection('users').doc(currentUser.id).update({
+    balance: currentUser.balance + total, inversiones, txCounter: txId,
+    transactions: firebase.firestore.FieldValue.arrayUnion({
+      id: txId, type: 'credit',
+      desc: `Venta ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`,
+      amount: total, date: todayStr()
+    }),
+  });
+  closeModal('vender-accion');
+  showNotif(`✓ Vendiste ${qty} acc. de ${pendingInvAccion.ticker.replace('.BA','')} por ${fmtARS(total)}`);
+}
+ 
+// ─── HISTORIAL DE TRANSACCIONES ───────────────────────────────────
+function renderHistorial() {
+  const TRES_MESES = 90 * 24 * 60 * 60 * 1000;
+  const ahora = new Date();
+  function dentroDeVentana(str) {
+    const [d,m,y] = str.split('/');
+    return (ahora - new Date(+y,+m-1,+d)) <= TRES_MESES;
+  }
+  function renderLista(txs, elId, fmtFn) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const lista = [...txs].reverse().filter(t => dentroDeVentana(t.date));
+    if (!lista.length) { el.innerHTML = '<div class="empty-state">No hay movimientos en los últimos 3 meses.</div>'; return; }
+    el.innerHTML = lista.map(tx => {
+      const cls = tx.type === 'credit' ? 'credit' : 'debit';
+      return `<div class="tx-item">
+        <div class="tx-left"><div class="tx-icon ${cls}">${tx.type==='credit'?'↙':'↗'}</div>
+        <div><div class="tx-desc">${tx.desc}</div><div class="tx-date">${tx.date}</div></div></div>
+        <div class="tx-amount ${cls}">${tx.type==='credit'?'+ ':'− '}${fmtFn(tx.amount)}</div>
+      </div>`;
+    }).join('');
+  }
+  renderLista(currentUser.transactions || [], 'hist-ars-list', fmtARS);
+  renderLista(currentUser.txUSD || [], 'hist-usd-list', fmtUSD);
 }
  
 // ─── CIERRE DE MODALES ────────────────────────────────────────────
