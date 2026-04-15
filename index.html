@@ -98,7 +98,6 @@
     .action-icon{width:34px;height:34px;border-radius:9px;background:var(--red3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--red);font-weight:700;}
     .action-icon.blue{background:var(--blue-bg);color:var(--blue);}
     .action-icon.amber{background:var(--amber-bg);color:var(--amber);}
-    .action-icon.green{background:var(--green-bg);color:var(--green);}
     .action-text .action-title{font-size:13px;color:var(--text);font-weight:700;}
     .action-text .action-desc{font-size:10px;color:var(--text3);margin-top:1px;}
     .card-box{background:#fff;border:1.5px solid var(--gray2);border-radius:12px;overflow:hidden;margin-bottom:1.25rem;}
@@ -204,30 +203,33 @@
     .notification.warn{border-left:4px solid var(--amber);}
     .notification.info{border-left:4px solid var(--blue);}
  
-    /* ── INVERSIONES ── */
-    .inv-search-row{display:flex;gap:10px;margin-bottom:1.25rem;}
+    .inv-tabs{display:flex;border-bottom:2px solid var(--gray2);margin-bottom:1.25rem;background:#fff;border-radius:12px 12px 0 0;overflow:hidden;}
+    .inv-tab{flex:1;padding:10px;border:none;background:transparent;color:var(--text3);font-size:13px;cursor:pointer;font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;}
+    .inv-tab.active{color:var(--red);border-bottom-color:var(--red);}
+    .inv-search-row{display:flex;gap:10px;margin-bottom:1rem;}
     .inv-search-row input{flex:1;padding:10px 14px;background:var(--gray);border:1.5px solid var(--gray2);border-radius:8px;color:var(--text);font-size:14px;outline:none;}
     .inv-search-row input:focus{border-color:var(--red);}
     .inv-search-row button{padding:10px 18px;background:var(--red);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
     .inv-search-row button:hover{background:var(--red2);}
-    .quote-card{background:#fff;border:1.5px solid var(--gray2);border-radius:12px;padding:1rem 1.25rem;margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;gap:12px;transition:border-color .2s;}
+    .inv-resultado{margin-bottom:1rem;}
+    .quote-card{background:#fff;border:1.5px solid var(--gray2);border-radius:12px;padding:1rem 1.25rem;margin-bottom:.6rem;display:flex;align-items:center;justify-content:space-between;gap:12px;transition:border-color .2s;}
     .quote-card:hover{border-color:var(--red);}
     .quote-left{flex:1;}
     .quote-ticker{font-size:15px;font-weight:700;color:var(--text);}
     .quote-name{font-size:11px;color:var(--text3);margin-top:2px;}
+    .quote-vol{font-size:11px;color:var(--text3);margin-top:2px;}
     .quote-center{text-align:right;}
     .quote-price{font-size:18px;font-weight:700;color:var(--navy);}
     .quote-change{font-size:12px;font-weight:700;margin-top:2px;}
     .quote-change.pos{color:var(--green);}
     .quote-change.neg{color:var(--red);}
-    .quote-vol{font-size:11px;color:var(--text3);margin-top:2px;}
     .quote-right{display:flex;flex-direction:column;gap:6px;align-items:flex-end;}
     .btn-comprar{padding:6px 14px;background:var(--green-bg);color:var(--green);border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
     .btn-comprar:hover{background:#c8e6c9;}
     .btn-vender{padding:6px 14px;background:var(--red3);color:var(--red);border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
     .btn-vender:hover{background:#f5c6cb;}
-    .loading-quotes{text-align:center;padding:2rem;color:var(--text3);font-size:13px;}
-    .port-card{background:#fff;border:1.5px solid var(--gray2);border-radius:12px;padding:.9rem 1.25rem;margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+    .loading-quotes{text-align:center;padding:1.5rem;color:var(--text3);font-size:13px;}
+    .port-card{background:#fff;border:1.5px solid var(--gray2);border-radius:12px;padding:.9rem 1.25rem;margin-bottom:.6rem;display:flex;align-items:center;justify-content:space-between;gap:12px;}
     .port-left{flex:1;}
     .port-ticker{font-size:14px;font-weight:700;color:var(--text);}
     .port-detail{font-size:11px;color:var(--text3);margin-top:2px;}
@@ -236,10 +238,11 @@
     .port-pnl{font-size:12px;font-weight:700;margin-top:2px;}
     .port-pnl.pos{color:var(--green);}
     .port-pnl.neg{color:var(--red);}
-    .inv-tabs{display:flex;border-bottom:2px solid var(--gray2);margin-bottom:1.25rem;background:#fff;border-radius:12px 12px 0 0;overflow:hidden;}
-    .inv-tab{flex:1;padding:10px;border:none;background:transparent;color:var(--text3);font-size:13px;cursor:pointer;font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;}
-    .inv-tab.active{color:var(--red);border-bottom-color:var(--red);}
-    .action-icon.purple{background:#ede7f6;color:#6a1b9a;}
+    .comitente-banner{background:var(--green-bg);border:1.5px solid #a5d6a7;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+    .comitente-banner p{font-size:13px;color:var(--green);font-weight:600;}
+    .btn-open-comitente{padding:8px 16px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+    .btn-open-comitente:hover{background:#1b5e20;}
+    .action-icon.green{background:var(--green-bg);color:var(--green);}
     @media(max-width:600px){
       .login-side{display:none;}
       .balances-row{grid-template-columns:1fr;}
@@ -390,32 +393,43 @@
         </div>
         <div class="card-box" id="prestamos-list"></div>
       </div>
-      <div id="utab-plazos" style="display:none">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
-          <div class="section-title" style="margin:0">MIS PLAZOS FIJOS</div>
-          <button class="btn-primary" style="width:auto;padding:8px 18px;margin:0;font-size:13px" onclick="openModal('new-plazo')">+ Constituir plazo fijo</button>
-        </div>
-        <div class="card-box" id="plazos-list"></div>
-      </div>
       <div id="utab-inversiones" style="display:none">
-        <div class="inv-tabs">
-          <button class="inv-tab active" onclick="invSubTab('mercado')">Mercado</button>
-          <button class="inv-tab" onclick="invSubTab('portafolio')">Mi Portafolio</button>
-        </div>
-        <!-- MERCADO -->
-        <div id="inv-mercado">
-          <div class="inv-search-row">
-            <input type="text" id="inv-search-input" placeholder="Buscar por ticker (ej: GGAL, YPFD, AAPL)..." onkeydown="if(event.key==='Enter')buscarTicker()"/>
-            <button onclick="buscarTicker()">Buscar</button>
+        <!-- BANNER si no tiene cuenta comitente -->
+        <div id="comitente-cerrado" style="display:none">
+          <div class="comitente-banner">
+            <p>Para invertir necesitás abrir una Cuenta Comitente. Es gratuita y se activa al instante.</p>
+            <button class="btn-open-comitente" onclick="abrirCuentaComitente()">Abrir Cuenta Comitente</button>
           </div>
-          <div class="section-title">ACCIONES LÍDERES</div>
-          <div id="quotes-lideres"><div class="loading-quotes">⏳ Cargando cotizaciones...</div></div>
-          <div class="section-title" style="margin-top:1.25rem;">CEDEARs DESTACADOS</div>
-          <div id="quotes-cedears"><div class="loading-quotes">⏳ Cargando cotizaciones...</div></div>
         </div>
-        <!-- PORTAFOLIO -->
-        <div id="inv-portafolio" style="display:none">
-          <div id="port-list"><div class="empty-state">No tenés posiciones abiertas.</div></div>
+        <!-- Contenido si tiene cuenta comitente -->
+        <div id="comitente-abierto">
+          <div class="inv-tabs">
+            <button class="inv-tab active" onclick="invSubTab('mercado')">Mercado</button>
+            <button class="inv-tab" onclick="invSubTab('portafolio')">Mi Portafolio</button>
+          </div>
+          <!-- MERCADO -->
+          <div id="inv-mercado">
+            <div class="inv-search-row">
+              <input type="text" id="inv-search-input" placeholder="Buscar por ticker (ej: GGAL, YPFD, AAPL)..." onkeydown="if(event.key==='Enter')buscarTicker()"/>
+              <button onclick="buscarTicker()">Buscar</button>
+            </div>
+            <!-- Resultado de búsqueda: aparece arriba, NO reemplaza la lista -->
+            <div id="inv-resultado" style="display:none">
+              <div class="section-title">RESULTADO DE BÚSQUEDA</div>
+              <div id="quotes-resultado"></div>
+              <div style="text-align:center;margin-bottom:1rem;">
+                <button onclick="limpiarBusqueda()" style="padding:5px 14px;background:var(--gray2);border:none;border-radius:6px;font-size:11px;cursor:pointer;color:var(--text2);">✕ Limpiar búsqueda</button>
+              </div>
+            </div>
+            <div class="section-title">ACCIONES LÍDERES</div>
+            <div id="quotes-lideres"><div class="loading-quotes">⏳ Cargando cotizaciones...</div></div>
+            <div class="section-title" style="margin-top:1.25rem;">CEDEARs DESTACADOS</div>
+            <div id="quotes-cedears"><div class="loading-quotes">⏳ Cargando cotizaciones...</div></div>
+          </div>
+          <!-- PORTAFOLIO -->
+          <div id="inv-portafolio" style="display:none">
+            <div id="port-list"><div class="empty-state">No tenés posiciones abiertas.</div></div>
+          </div>
         </div>
       </div>
       <div id="utab-historial" style="display:none">
@@ -424,6 +438,13 @@
         <div class="section-title" style="margin-top:1.25rem;">MOVIMIENTOS USD</div>
         <div class="card-box" id="hist-usd-list"></div>
         <p style="font-size:11px;color:var(--text3);text-align:center;margin-top:1rem;">Se muestran los movimientos de los últimos 3 meses.</p>
+      </div>
+      <div id="utab-plazos" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <div class="section-title" style="margin:0">MIS PLAZOS FIJOS</div>
+          <button class="btn-primary" style="width:auto;padding:8px 18px;margin:0;font-size:13px" onclick="openModal('new-plazo')">+ Constituir plazo fijo</button>
+        </div>
+        <div class="card-box" id="plazos-list"></div>
       </div>
     </div>
   </div>
@@ -601,7 +622,6 @@
   </div></div>
  
  
-  <!-- MODAL COMPRAR ACCIÓN -->
   <div class="modal-overlay" id="modal-comprar-accion"><div class="modal">
     <div class="modal-header"><span class="modal-title" id="modal-comprar-title">Comprar</span><button class="modal-close" onclick="closeModal('comprar-accion')">✕</button></div>
     <div id="modal-comprar-info" style="background:var(--gray);border-radius:8px;padding:.9rem 1rem;margin-bottom:1rem;font-size:13px;"></div>
@@ -615,7 +635,6 @@
     <button class="btn-primary" style="background:var(--green)" onclick="doComprarAccion()">CONFIRMAR COMPRA</button>
   </div></div>
  
-  <!-- MODAL VENDER ACCIÓN -->
   <div class="modal-overlay" id="modal-vender-accion"><div class="modal">
     <div class="modal-header"><span class="modal-title" id="modal-vender-title">Vender</span><button class="modal-close" onclick="closeModal('vender-accion')">✕</button></div>
     <div id="modal-vender-info" style="background:var(--gray);border-radius:8px;padding:.9rem 1rem;margin-bottom:1rem;font-size:13px;"></div>
