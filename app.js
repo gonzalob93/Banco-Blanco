@@ -886,7 +886,7 @@ function buildQuoteCard(ticker, q) {
   const pos = q.changePct >= 0;
   const sign = pos ? '+' : '';
   const tenencia = (currentUser.inversiones || []).find(i => i.ticker === ticker);
-  const nombreSeguro = (q.name || ticker).replace(/\/g,'\\').replace(/'/g,"\'");
+  const nombreSeguro = (q.name || ticker).replace(/'/g, '&#39;');
   return `<div class="quote-card">
     <div class="quote-left">
       <div class="quote-ticker">${ticker.replace('.BA','')}</div>
@@ -975,7 +975,7 @@ async function renderPortafolio() {
     const pnlPct = (pnl / costo) * 100;
     totalActual += valorActual; totalCosto += costo;
     const pos = pnl >= 0;
-    const nombreSeguro = (inv.nombre||inv.ticker).replace(/\/g,'\\').replace(/'/g,"\'");
+    const nombreSeguro = (inv.nombre||inv.ticker).replace(/'/g, '&#39;');
     cards.push(`<div class="port-card">
       <div class="port-left">
         <div class="port-ticker">${inv.ticker.replace('.BA','')} <span style="font-weight:400;font-size:11px;color:var(--text3)">× ${inv.cantidad} acc.</span></div>
