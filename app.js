@@ -285,24 +285,14 @@ async function procesarVencimientos() {
  
 // ─── DASHBOARD ────────────────────────────────────────────────────
 function userTab(tab) {
-  document.querySelectorAll('.user-nav-tab').forEach((t, i) =>
-    t.classList.toggle('active', ['home', 'divisas', 'prestamos', 'plazos', 'inversiones', 'historial'][i] === tab)
-  );
-  ['home', 'divisas', 'prestamos', 'plazos', 'inversiones', 'historial'].forEach(t =>
-    document.getElementById('utab-' + t).style.display = t === tab ? '' : 'none'
-  );
-  if (tab === 'divisas') renderDivisasTab();
-  if (tab === 'prestamos') renderPrestamosUser();
-  if (tab === 'plazos') renderPlazosUser();
+  const TABS = ['home','divisas','prestamos','plazos','inversiones','historial'];
+  document.querySelectorAll('.user-nav-tab').forEach((t,i) => t.classList.toggle('active', TABS[i] === tab));
+  TABS.forEach(t => document.getElementById('utab-' + t).style.display = t === tab ? '' : 'none');
+  if (tab === 'divisas')    renderDivisasTab();
+  if (tab === 'prestamos')  renderPrestamosUser();
+  if (tab === 'plazos')     renderPlazosUser();
   if (tab === 'inversiones') renderInversiones();
-  if (tab === 'historial') renderHistorial();
-}
- 
-function renderInversiones() {
-  // Cargar cotizaciones al entrar a la pestaña
-  invSubTab('mercado');
-  cargarCotizaciones(ACCIONES_LIDERES, 'quotes-lideres');
-  cargarCotizaciones(CEDEARS_DESTACADOS, 'quotes-cedears');
+  if (tab === 'historial')  renderHistorial();
 }
  
 function renderDashboard() {
@@ -839,14 +829,21 @@ const CEDEARS_DESTACADOS = [
   { ticker: 'NVDA',  nombre: 'NVIDIA Corp.' },
 ];
  
-// Estado local de inversiones
-let cotizaciones = {};       // { ticker: { price, change, changePct, name, currency } }
-let pendingInvAccion = null; // acción seleccionada para compra/venta
+let cotizaciones = {};
+let pendingInvAccion = null;
+ 
+// ─── CUENTA COMITENTE ─────────────────────────────────────────────
+async function abrirCuentaComitente() {
+  if (currentUser.accountNumComitente) return;
+  const num = 'CC-' + String(Math.floor(Math.random() * 900000) + 100000);
+  await db.collection('users').doc(currentUser.id).update({ accountNumComitente: num });
+  showNotif('✓ Cuenta Comitente abierta: ' + num, 'success');
+  renderInversiones();
+}
  
 // ─── FETCH COTIZACIÓN ─────────────────────────────────────────────
 async function fetchCotizacion(ticker) {
-  const symbol = encodeURIComponent(ticker);
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`;
   const proxyUrl = `${PROXY}/?url=${encodeURIComponent(url)}`;
   const res = await fetch(proxyUrl);
   if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -855,14 +852,11 @@ async function fetchCotizacion(ticker) {
   const meta = result.meta;
   const closes = result.indicators.quote[0].close.filter(Boolean);
   const lastPrice = closes.slice(-1)[0] || meta.regularMarketPrice;
-  const prevClose = meta.chartPreviousClose || meta.previousClose || closes.slice(-2)[0];
+  const prevClose = meta.chartPreviousClose || meta.previousClose || closes.slice(-2)[0] || lastPrice;
   const change = lastPrice - prevClose;
-  const changePct = (change / prevClose) * 100;
+  const changePct = prevClose ? (change / prevClose) * 100 : 0;
   return {
-    price: lastPrice,
-    prevClose,
-    change,
-    changePct,
+    price: lastPrice, prevClose, change, changePct,
     name: meta.longName || meta.shortName || ticker,
     currency: meta.currency,
     volume: result.indicators.quote[0].volume?.slice(-1)[0] || 0,
@@ -870,7 +864,7 @@ async function fetchCotizacion(ticker) {
   };
 }
  
-// ─── RENDER COTIZACIONES ──────────────────────────────────────────
+// ─── RENDER LISTA DE COTIZACIONES ────────────────────────────────
 async function cargarCotizaciones(lista, elId) {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -880,81 +874,82 @@ async function cargarCotizaciones(lista, elId) {
     try {
       const q = await fetchCotizacion(item.ticker);
       cotizaciones[item.ticker] = q;
-      const pos = q.changePct >= 0;
-      const sign = pos ? '+' : '';
-      const tenencia = currentUser?.inversiones?.find(i => i.ticker === item.ticker);
-      cards.push(`
-        <div class="quote-card">
-          <div class="quote-left">
-            <div class="quote-ticker">${item.ticker.replace('.BA','')}</div>
-            <div class="quote-name">${q.name}</div>
-            <div class="quote-vol">Vol: ${q.volume.toLocaleString('es-AR')}</div>
-          </div>
-          <div class="quote-center">
-            <div class="quote-price">${fmtARS(q.price)}</div>
-            <div class="quote-change ${pos?'pos':'neg'}">${sign}${fmtARS(q.change)} (${sign}${q.changePct.toFixed(2)}%)</div>
-            ${tenencia ? `<div style="font-size:10px;color:var(--blue);margin-top:2px;">Tenés ${tenencia.cantidad} acc.</div>` : ''}
-          </div>
-          <div class="quote-right">
-            <button class="btn-comprar" onclick="abrirCompra('${item.ticker}','${q.name.replace(/'/g,"\'")}')">Comprar</button>
-            ${tenencia ? `<button class="btn-vender" onclick="abrirVenta('${item.ticker}','${q.name.replace(/'/g,"\'")}')">Vender</button>` : ''}
-          </div>
-        </div>`);
+      cards.push(buildQuoteCard(item.ticker, q));
     } catch(e) {
-      cards.push(`<div class="quote-card"><div class="quote-left"><div class="quote-ticker">${item.ticker.replace('.BA','')}</div><div class="quote-name">${item.nombre}</div></div><div style="font-size:12px;color:var(--text3)">Sin datos</div></div>`);
+      cards.push(`<div class="quote-card"><div class="quote-left"><div class="quote-ticker">${item.ticker.replace('.BA','')}</div><div class="quote-name">${item.nombre}</div></div><div style="font-size:12px;color:var(--text3)">Sin datos disponibles</div></div>`);
     }
   }
   el.innerHTML = cards.join('');
 }
  
-// ─── BÚSQUEDA LIBRE ───────────────────────────────────────────────
+function buildQuoteCard(ticker, q) {
+  const pos = q.changePct >= 0;
+  const sign = pos ? '+' : '';
+  const tenencia = (currentUser.inversiones || []).find(i => i.ticker === ticker);
+  const nombreSeguro = (q.name || ticker).replace(/\/g,'\\').replace(/'/g,"\'");
+  return `<div class="quote-card">
+    <div class="quote-left">
+      <div class="quote-ticker">${ticker.replace('.BA','')}</div>
+      <div class="quote-name">${q.name}${q.exchange ? ' · ' + q.exchange : ''}</div>
+      <div class="quote-vol">Vol: ${Number(q.volume).toLocaleString('es-AR')}</div>
+    </div>
+    <div class="quote-center">
+      <div class="quote-price">${fmtARS(q.price)}</div>
+      <div class="quote-change ${pos?'pos':'neg'}">${sign}${fmtARS(q.change)} (${sign}${q.changePct.toFixed(2)}%)</div>
+      ${tenencia ? `<div style="font-size:10px;color:var(--blue);margin-top:2px;">Tenés ${tenencia.cantidad} acc.</div>` : ''}
+    </div>
+    <div class="quote-right">
+      <button class="btn-comprar" onclick="abrirCompra('${ticker}','${nombreSeguro}')">Comprar</button>
+      ${tenencia ? `<button class="btn-vender" onclick="abrirVenta('${ticker}','${nombreSeguro}')">Vender</button>` : ''}
+    </div>
+  </div>`;
+}
+ 
+// ─── BÚSQUEDA LIBRE (no toca la lista de líderes) ────────────────
 async function buscarTicker() {
-  const input = document.getElementById('inv-search-input');
-  let ticker = input.value.trim().toUpperCase();
-  if (!ticker) return;
-  // Si no tiene sufijo .BA y parece acción local (≤5 chars sin punto), lo agregamos
-  if (!ticker.includes('.') && ticker.length <= 5) ticker += '.BA';
-  const el = document.getElementById('quotes-lideres');
-  el.innerHTML = `<div class="loading-quotes">⏳ Buscando ${ticker}...</div>`;
+  let input = document.getElementById('inv-search-input').value.trim().toUpperCase();
+  if (!input) return;
+  // Si parece ticker local (sin punto, ≤6 chars), agrega .BA
+  if (!input.includes('.') && input.length <= 6) input += '.BA';
+ 
+  const resDiv = document.getElementById('inv-resultado');
+  const resEl  = document.getElementById('quotes-resultado');
+  resDiv.style.display = '';
+  resEl.innerHTML = `<div class="loading-quotes">⏳ Buscando ${input}...</div>`;
+ 
   try {
-    const q = await fetchCotizacion(ticker);
-    cotizaciones[ticker] = q;
-    const pos = q.changePct >= 0;
-    const sign = pos ? '+' : '';
-    const tenencia = currentUser?.inversiones?.find(i => i.ticker === ticker);
-    el.innerHTML = `
-      <div class="quote-card">
-        <div class="quote-left">
-          <div class="quote-ticker">${ticker.replace('.BA','')}</div>
-          <div class="quote-name">${q.name} · ${q.exchange} · ${q.currency}</div>
-          <div class="quote-vol">Vol: ${q.volume.toLocaleString('es-AR')}</div>
-        </div>
-        <div class="quote-center">
-          <div class="quote-price">${fmtARS(q.price)}</div>
-          <div class="quote-change ${pos?'pos':'neg'}">${sign}${fmtARS(q.change)} (${sign}${q.changePct.toFixed(2)}%)</div>
-          ${tenencia ? `<div style="font-size:10px;color:var(--blue);margin-top:2px;">Tenés ${tenencia.cantidad} acc.</div>` : ''}
-        </div>
-        <div class="quote-right">
-          <button class="btn-comprar" onclick="abrirCompra('${ticker}','${q.name.replace(/'/g,"\'")}')">Comprar</button>
-          ${tenencia ? `<button class="btn-vender" onclick="abrirVenta('${ticker}','${q.name.replace(/'/g,"\'")}')">Vender</button>` : ''}
-        </div>
-      </div>
-      <div style="text-align:center;margin-top:.5rem;">
-        <button onclick="cargarCotizaciones(ACCIONES_LIDERES,'quotes-lideres');" style="padding:5px 12px;background:var(--gray2);border:none;border-radius:6px;font-size:11px;cursor:pointer;color:var(--text2);">← Volver a líderes</button>
-      </div>`;
+    const q = await fetchCotizacion(input);
+    cotizaciones[input] = q;
+    resEl.innerHTML = buildQuoteCard(input, q);
   } catch(e) {
-    el.innerHTML = `<div class="empty-state">No se encontró el ticker <strong>${ticker}</strong>. Verificá que sea correcto.</div>`;
+    resEl.innerHTML = `<div class="empty-state">No se encontró el ticker <strong>${input}</strong>. Verificá que sea correcto.</div>`;
   }
 }
  
-// ─── SUB-TABS INVERSIONES ─────────────────────────────────────────
+function limpiarBusqueda() {
+  document.getElementById('inv-resultado').style.display = 'none';
+  document.getElementById('inv-search-input').value = '';
+}
+ 
+// ─── SUB-TABS ─────────────────────────────────────────────────────
 function invSubTab(tab) {
-  document.querySelectorAll('.inv-tab').forEach((t,i) =>
-    t.classList.toggle('active', ['mercado','portafolio'][i] === tab)
+  document.querySelectorAll('.inv-tab').forEach((t, i) =>
+    t.classList.toggle('active', ['mercado', 'portafolio'][i] === tab)
   );
-  document.getElementById('inv-mercado').style.display = tab === 'mercado' ? '' : 'none';
+  document.getElementById('inv-mercado').style.display   = tab === 'mercado'   ? '' : 'none';
   document.getElementById('inv-portafolio').style.display = tab === 'portafolio' ? '' : 'none';
   if (tab === 'portafolio') renderPortafolio();
+}
+ 
+// ─── RENDER PESTAÑA PRINCIPAL ─────────────────────────────────────
+function renderInversiones() {
+  const hasComitente = !!currentUser.accountNumComitente;
+  document.getElementById('comitente-cerrado').style.display  = hasComitente ? 'none' : '';
+  document.getElementById('comitente-abierto').style.display  = hasComitente ? '' : 'none';
+  if (!hasComitente) return;
+  invSubTab('mercado');
+  cargarCotizaciones(ACCIONES_LIDERES, 'quotes-lideres');
+  cargarCotizaciones(CEDEARS_DESTACADOS, 'quotes-cedears');
 }
  
 // ─── PORTAFOLIO ───────────────────────────────────────────────────
@@ -978,35 +973,37 @@ async function renderPortafolio() {
     const costo = inv.precioPromedio * inv.cantidad;
     const pnl = valorActual - costo;
     const pnlPct = (pnl / costo) * 100;
-    totalActual += valorActual;
-    totalCosto += costo;
+    totalActual += valorActual; totalCosto += costo;
     const pos = pnl >= 0;
-    cards.push(`
-      <div class="port-card">
-        <div class="port-left">
-          <div class="port-ticker">${inv.ticker.replace('.BA','')} <span style="font-weight:400;font-size:11px;color:var(--text3)">× ${inv.cantidad} acc.</span></div>
-          <div class="port-detail">P. promedio: ${fmtARS(inv.precioPromedio)} · Actual: ${fmtARS(precioActual)}</div>
-        </div>
-        <div class="port-right">
-          <div class="port-valor">${fmtARS(valorActual)}</div>
-          <div class="port-pnl ${pos?'pos':'neg'}">${pos?'+':''}${fmtARS(pnl)} (${pos?'+':''}${pnlPct.toFixed(2)}%)</div>
-          <button class="btn-vender" style="margin-top:4px" onclick="abrirVenta('${inv.ticker}','${inv.nombre.replace(/'/g,"\'")}')">Vender</button>
-        </div>
-      </div>`);
+    const nombreSeguro = (inv.nombre||inv.ticker).replace(/\/g,'\\').replace(/'/g,"\'");
+    cards.push(`<div class="port-card">
+      <div class="port-left">
+        <div class="port-ticker">${inv.ticker.replace('.BA','')} <span style="font-weight:400;font-size:11px;color:var(--text3)">× ${inv.cantidad} acc.</span></div>
+        <div class="port-detail">P. promedio: ${fmtARS(inv.precioPromedio)} · Actual: ${fmtARS(precioActual)}</div>
+      </div>
+      <div class="port-right">
+        <div class="port-valor">${fmtARS(valorActual)}</div>
+        <div class="port-pnl ${pos?'pos':'neg'}">${pos?'+':''}${fmtARS(pnl)} (${pos?'+':''}${pnlPct.toFixed(2)}%)</div>
+        <button class="btn-vender" style="margin-top:4px" onclick="abrirVenta('${inv.ticker}','${nombreSeguro}')">Vender</button>
+      </div>
+    </div>`);
   }
   const pnlTotal = totalActual - totalCosto;
   const pnlTotalPos = pnlTotal >= 0;
   el.innerHTML = `
     <div style="background:var(--navy);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem;display:flex;justify-content:space-between;align-items:center;">
-      <div><div style="font-size:10px;color:rgba(255,255,255,.5);letter-spacing:2px;font-weight:700;">VALOR TOTAL PORTAFOLIO</div><div style="font-size:24px;color:#fff;font-weight:700;">${fmtARS(totalActual)}</div></div>
-      <div style="text-align:right;"><div style="font-size:12px;font-weight:700;color:${pnlTotalPos?'#81c784':'#e57373'};">${pnlTotalPos?'+':''}${fmtARS(pnlTotal)}</div><div style="font-size:11px;color:rgba(255,255,255,.4);">resultado total</div></div>
-    </div>
-    ${cards.join('')}`;
+      <div><div style="font-size:10px;color:rgba(255,255,255,.5);letter-spacing:2px;font-weight:700;">VALOR TOTAL</div>
+      <div style="font-size:24px;color:#fff;font-weight:700;">${fmtARS(totalActual)}</div></div>
+      <div style="text-align:right;">
+        <div style="font-size:13px;font-weight:700;color:${pnlTotalPos?'#81c784':'#e57373'};">${pnlTotalPos?'+':''}${fmtARS(pnlTotal)}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4);">resultado total</div>
+      </div>
+    </div>${cards.join('')}`;
 }
  
 // ─── MODALES COMPRA / VENTA ───────────────────────────────────────
 function abrirCompra(ticker, nombre) {
-  pendingInvAccion = { ticker, nombre, tipo: 'compra' };
+  pendingInvAccion = { ticker, nombre };
   const q = cotizaciones[ticker];
   document.getElementById('modal-comprar-title').textContent = 'Comprar ' + ticker.replace('.BA','');
   document.getElementById('modal-comprar-info').innerHTML =
@@ -1023,11 +1020,10 @@ function simCompraAccion() {
   if (!qty || qty <= 0 || !pendingInvAccion) { sim.style.display = 'none'; return; }
   const q = cotizaciones[pendingInvAccion.ticker];
   if (!q) return;
-  const total = q.price * qty;
   sim.style.display = '';
   document.getElementById('comprar-sim-precio').textContent = fmtARS(q.price);
   document.getElementById('comprar-sim-qty').textContent = qty + ' acciones';
-  document.getElementById('comprar-sim-total').textContent = fmtARS(total);
+  document.getElementById('comprar-sim-total').textContent = fmtARS(q.price * qty);
 }
  
 async function doComprarAccion() {
@@ -1038,38 +1034,32 @@ async function doComprarAccion() {
   if (!q) { err.textContent = 'Sin precio disponible.'; err.classList.add('show'); return; }
   const total = q.price * qty;
   if (total > currentUser.balance) { err.textContent = 'Saldo insuficiente (necesitás ' + fmtARS(total) + ').'; err.classList.add('show'); return; }
-  const d = todayStr();
   const txId = (currentUser.txCounter || 200) + 1;
-  // Actualizar portafolio
   let inversiones = [...(currentUser.inversiones || [])];
   const idx = inversiones.findIndex(i => i.ticker === pendingInvAccion.ticker);
   if (idx >= 0) {
     const prev = inversiones[idx];
     const nuevaCantidad = prev.cantidad + qty;
-    const nuevoPrecio = ((prev.precioPromedio * prev.cantidad) + (q.price * qty)) / nuevaCantidad;
-    inversiones[idx] = { ...prev, cantidad: nuevaCantidad, precioPromedio: nuevoPrecio };
+    inversiones[idx] = { ...prev, cantidad: nuevaCantidad, precioPromedio: ((prev.precioPromedio * prev.cantidad) + (q.price * qty)) / nuevaCantidad };
   } else {
     inversiones.push({ ticker: pendingInvAccion.ticker, nombre: pendingInvAccion.nombre, cantidad: qty, precioPromedio: q.price });
   }
   await db.collection('users').doc(currentUser.id).update({
-    balance: currentUser.balance - total,
-    inversiones,
-    txCounter: txId,
+    balance: currentUser.balance - total, inversiones, txCounter: txId,
     transactions: firebase.firestore.FieldValue.arrayUnion({
       id: txId, type: 'debit',
       desc: `Compra ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`,
-      amount: total, date: d
+      amount: total, date: todayStr()
     }),
   });
   closeModal('comprar-accion');
-  document.getElementById('comprar-qty').value = '';
   showNotif(`✓ Compraste ${qty} acc. de ${pendingInvAccion.ticker.replace('.BA','')} por ${fmtARS(total)}`);
 }
  
 function abrirVenta(ticker, nombre) {
-  pendingInvAccion = { ticker, nombre, tipo: 'venta' };
+  pendingInvAccion = { ticker, nombre };
   const q = cotizaciones[ticker];
-  const tenencia = currentUser.inversiones?.find(i => i.ticker === ticker);
+  const tenencia = (currentUser.inversiones || []).find(i => i.ticker === ticker);
   document.getElementById('modal-vender-title').textContent = 'Vender ' + ticker.replace('.BA','');
   document.getElementById('modal-vender-info').innerHTML =
     `<strong>${nombre}</strong><br>Precio actual: <strong>${q ? fmtARS(q.price) : '...'}</strong> · Tenés: <strong>${tenencia?.cantidad || 0} acciones</strong>`;
@@ -1085,81 +1075,64 @@ function simVentaAccion() {
   if (!qty || qty <= 0 || !pendingInvAccion) { sim.style.display = 'none'; return; }
   const q = cotizaciones[pendingInvAccion.ticker];
   if (!q) return;
-  const total = q.price * qty;
   sim.style.display = '';
   document.getElementById('vender-sim-precio').textContent = fmtARS(q.price);
   document.getElementById('vender-sim-qty').textContent = qty + ' acciones';
-  document.getElementById('vender-sim-total').textContent = fmtARS(total);
+  document.getElementById('vender-sim-total').textContent = fmtARS(q.price * qty);
 }
  
 async function doVenderAccion() {
   const qty = parseInt(document.getElementById('vender-qty').value);
   const err = document.getElementById('vender-error'); err.classList.remove('show');
   if (!qty || qty <= 0) { err.textContent = 'Ingresá una cantidad válida.'; err.classList.add('show'); return; }
-  const tenencia = currentUser.inversiones?.find(i => i.ticker === pendingInvAccion.ticker);
+  const tenencia = (currentUser.inversiones || []).find(i => i.ticker === pendingInvAccion.ticker);
   if (!tenencia || qty > tenencia.cantidad) { err.textContent = `Solo tenés ${tenencia?.cantidad || 0} acciones.`; err.classList.add('show'); return; }
   const q = cotizaciones[pendingInvAccion.ticker];
   if (!q) { err.textContent = 'Sin precio disponible.'; err.classList.add('show'); return; }
   const total = q.price * qty;
-  const d = todayStr();
   const txId = (currentUser.txCounter || 200) + 1;
   let inversiones = [...(currentUser.inversiones || [])];
   const idx = inversiones.findIndex(i => i.ticker === pendingInvAccion.ticker);
-  if (tenencia.cantidad - qty <= 0) {
-    inversiones.splice(idx, 1);
-  } else {
-    inversiones[idx] = { ...tenencia, cantidad: tenencia.cantidad - qty };
-  }
+  if (tenencia.cantidad - qty <= 0) { inversiones.splice(idx, 1); }
+  else { inversiones[idx] = { ...tenencia, cantidad: tenencia.cantidad - qty }; }
   await db.collection('users').doc(currentUser.id).update({
-    balance: currentUser.balance + total,
-    inversiones,
-    txCounter: txId,
+    balance: currentUser.balance + total, inversiones, txCounter: txId,
     transactions: firebase.firestore.FieldValue.arrayUnion({
       id: txId, type: 'credit',
       desc: `Venta ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`,
-      amount: total, date: d
+      amount: total, date: todayStr()
     }),
   });
   closeModal('vender-accion');
-  document.getElementById('vender-qty').value = '';
   showNotif(`✓ Vendiste ${qty} acc. de ${pendingInvAccion.ticker.replace('.BA','')} por ${fmtARS(total)}`);
 }
  
- 
-// ─── HISTORIAL DE TRANSACCIONES ──────────────────────────────────
+// ─── HISTORIAL DE TRANSACCIONES ───────────────────────────────────
 function renderHistorial() {
-  const TRES_MESES_MS = 90 * 24 * 60 * 60 * 1000;
+  const TRES_MESES = 90 * 24 * 60 * 60 * 1000;
   const ahora = new Date();
- 
-  function dentroDeVentana(dateStr) {
-    const partes = dateStr.split('/');
-    if (partes.length !== 3) return false;
-    const fecha = new Date(+partes[2], +partes[1] - 1, +partes[0]);
-    return (ahora - fecha) <= TRES_MESES_MS;
+  function dentroDeVentana(str) {
+    const [d,m,y] = str.split('/');
+    return (ahora - new Date(+y,+m-1,+d)) <= TRES_MESES;
   }
- 
-  function renderLista(txs, elId, fmtAmount) {
+  function renderLista(txs, elId, fmtFn) {
     const el = document.getElementById(elId);
     if (!el) return;
-    const filtradas = [...txs].reverse().filter(tx => dentroDeVentana(tx.date));
-    if (!filtradas.length) {
-      el.innerHTML = '<div class="empty-state">No hay movimientos en los últimos 3 meses.</div>';
-      return;
-    }
-    el.innerHTML = filtradas.map(tx => {
+    const lista = [...txs].reverse().filter(t => dentroDeVentana(t.date));
+    if (!lista.length) { el.innerHTML = '<div class="empty-state">No hay movimientos en los últimos 3 meses.</div>'; return; }
+    el.innerHTML = lista.map(tx => {
       const cls = tx.type === 'credit' ? 'credit' : 'debit';
-      const icon = tx.type === 'credit' ? '↙' : '↗';
       return `<div class="tx-item">
-        <div class="tx-left"><div class="tx-icon ${cls}">${icon}</div>
+        <div class="tx-left"><div class="tx-icon ${cls}">${tx.type==='credit'?'↙':'↗'}</div>
         <div><div class="tx-desc">${tx.desc}</div><div class="tx-date">${tx.date}</div></div></div>
-        <div class="tx-amount ${cls}">${tx.type === 'credit' ? '+ ' : '− '}${fmtAmount(tx.amount)}</div>
+        <div class="tx-amount ${cls}">${tx.type==='credit'?'+ ':'− '}${fmtFn(tx.amount)}</div>
       </div>`;
     }).join('');
   }
- 
   renderLista(currentUser.transactions || [], 'hist-ars-list', fmtARS);
   renderLista(currentUser.txUSD || [], 'hist-usd-list', fmtUSD);
 }
+ 
 // ─── CIERRE DE MODALES ────────────────────────────────────────────
 document.querySelectorAll('.modal-overlay').forEach(m => {
   m.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
@@ -1167,4 +1140,3 @@ document.querySelectorAll('.modal-overlay').forEach(m => {
  
 // ─── ARRANQUE ─────────────────────────────────────────────────────
 init();
-
