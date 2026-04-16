@@ -461,46 +461,46 @@ async function doComprarUSD() {
   const balOrigen = cuentaOrigen === 'ca' ? (currentUser.balanceCajaAhorro || 0) : (currentUser.balance || 0);
   if (ars > balOrigen) { err.textContent = 'Saldo insuficiente en ' + (cuentaOrigen === 'ca' ? 'caja de ahorro' : 'cuenta corriente') + ' (necesitás ' + fmtARS(ars) + ').'; err.classList.add('show'); return; }
   const txId = (currentUser.txCounter || 200) + 1;
-  const cuentaLabel = cuentaOrigen === 'ca' ? ' (desde Caja Ahorro)' : '';
-  const upd = { balanceUSD: (currentUser.balanceUSD || 0) + usd, txCounter: txId,
+  const cuentaLabelBuy = cuentaOrigen === 'ca' ? ' (desde Caja Ahorro)' : '';
+  const updBuy = { balanceUSD: (currentUser.balanceUSD || 0) + usd, txCounter: txId,
     txUSD: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Compra de divisas al TC ' + fmtTC(localConfig.tcVenta) + '/USD', amount: usd, date: todayStr() }) };
   if (cuentaOrigen === 'ca') {
-    upd.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) - ars;
-    upd.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Compra de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: ars, date: todayStr() });
+    updBuy.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) - ars;
+    updBuy.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Compra de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: ars, date: todayStr() });
   } else {
-    upd.balance = (currentUser.balance || 0) - ars;
-    upd.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Compra de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: ars, date: todayStr() });
+    updBuy.balance = (currentUser.balance || 0) - ars;
+    updBuy.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Compra de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: ars, date: todayStr() });
   }
-  await db.collection('users').doc(currentUser.id).update(upd);
+  await db.collection('users').doc(currentUser.id).update(updBuy);
   closeModal('comprar-usd');
   document.getElementById('buy-usd-amt').value = '';
   document.getElementById('buy-sim').style.display = 'none';
-  showNotif('✓ Compraste ' + fmtUSD(usd) + ' por ' + fmtARS(ars) + cuentaLabel, 'info');
+  showNotif('✓ Compraste ' + fmtUSD(usd) + ' por ' + fmtARS(ars) + cuentaLabelBuy, 'info');
 }
  
 async function doVenderUSD() {
   const usd = parseFloat(document.getElementById('sell-usd-amt').value);
   const err = document.getElementById('sell-error'); err.classList.remove('show');
   if (!usd || usd <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
-  if (usd > (currentUser.balanceUSD || 0)) { err.textContent = 'Saldo USD insuficiente.'; err.classList.add('show'); return; }
+  if (usd > currentUser.balanceUSD) { err.textContent = 'Saldo USD insuficiente.'; err.classList.add('show'); return; }
   const ars = usd * localConfig.tcCompra;
-  const cuentaDestino = getCuentaElegida('sell-usd-cuenta');
+  const cuentaDestSell = getCuentaElegida('sell-usd-cuenta');
   const txId = (currentUser.txCounter || 200) + 1;
-  const cuentaLabel = cuentaDestino === 'ca' ? ' (a Caja Ahorro)' : '';
-  const upd = { balanceUSD: (currentUser.balanceUSD || 0) - usd, txCounter: txId,
+  const cuentaLabelSell = cuentaDestSell === 'ca' ? ' (a Caja Ahorro)' : '';
+  const updSell = { balanceUSD: (currentUser.balanceUSD || 0) - usd, txCounter: txId,
     txUSD: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Venta de divisas al TC ' + fmtTC(localConfig.tcCompra) + '/USD', amount: usd, date: todayStr() }) };
-  if (cuentaDestino === 'ca') {
-    upd.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) + ars;
-    upd.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Venta de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcCompra), amount: ars, date: todayStr() });
+  if (cuentaDestSell === 'ca') {
+    updSell.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) + ars;
+    updSell.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Venta de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcCompra), amount: ars, date: todayStr() });
   } else {
-    upd.balance = (currentUser.balance || 0) + ars;
-    upd.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Venta de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcCompra), amount: ars, date: todayStr() });
+    updSell.balance = (currentUser.balance || 0) + ars;
+    updSell.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Venta de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcCompra), amount: ars, date: todayStr() });
   }
-  await db.collection('users').doc(currentUser.id).update(upd);
+  await db.collection('users').doc(currentUser.id).update(updSell);
   closeModal('vender-usd');
   document.getElementById('sell-usd-amt').value = '';
   document.getElementById('sell-sim').style.display = 'none';
-  showNotif('✓ Vendiste ' + fmtUSD(usd) + ' y recibiste ' + fmtARS(ars) + cuentaLabel, 'info');
+  showNotif('✓ Vendiste ' + fmtUSD(usd) + ' y recibiste ' + fmtARS(ars) + cuentaLabelSell, 'info');
 }
  
 async function doTransferUSD() {
@@ -1276,19 +1276,19 @@ async function doVenderAccion() {
   const idx = inversiones.findIndex(i => i.ticker === pendingInvAccion.ticker);
   if (tenencia.cantidad - qty <= 0) { inversiones.splice(idx, 1); }
   else { inversiones[idx] = { ...tenencia, cantidad: tenencia.cantidad - qty }; }
-  const cuentaDestAcc = getCuentaElegida('vender-acc-cuenta');
-  const cuentaLabelVentaAcc = cuentaDestAcc === 'ca' ? ' (a Caja Ahorro)' : '';
-  const updVentaAcc = { inversiones, txCounter: txId };
-  if (cuentaDestAcc === 'ca') {
-    updVentaAcc.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) + total;
-    updVentaAcc.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: `Venta ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`, amount: total, date: todayStr() });
+  const cuentaDestVenta = getCuentaElegida('vender-acc-cuenta');
+  const cuentaLabelVenta = cuentaDestVenta === 'ca' ? ' (a Caja Ahorro)' : '';
+  const updVenta = { inversiones, txCounter: txId };
+  if (cuentaDestVenta === 'ca') {
+    updVenta.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) + total;
+    updVenta.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: `Venta ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`, amount: total, date: todayStr() });
   } else {
-    updVentaAcc.balance = (currentUser.balance || 0) + total;
-    updVentaAcc.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: `Venta ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`, amount: total, date: todayStr() });
+    updVenta.balance = (currentUser.balance || 0) + total;
+    updVenta.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: `Venta ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`, amount: total, date: todayStr() });
   }
-  await db.collection('users').doc(currentUser.id).update(updVentaAcc);
+  await db.collection('users').doc(currentUser.id).update(updVenta);
   closeModal('vender-accion');
-  showNotif(`✓ Vendiste ${qty} acc. de ${pendingInvAccion.ticker.replace('.BA','')} por ${fmtARS(total)}${cuentaLabelVentaAcc}`);
+  showNotif(`✓ Vendiste ${qty} acc. de ${pendingInvAccion.ticker.replace('.BA','')} por ${fmtARS(total)}${cuentaLabelVenta}`);
 }
  
 // ─── HISTORIAL DE TRANSACCIONES ───────────────────────────────────
@@ -1320,54 +1320,42 @@ function renderHistorial() {
  
 
 
-// ─── HELPERS DE SELECCIÓN DE CUENTA ──────────────────────────────
+// ─── HELPERS SELECCIÓN DE CUENTA ─────────────────────────────────
 
-// Muestra u oculta los selectores de cuenta en modales según si el
-// usuario tiene CA. Se llama cada vez que se abre un modal relevante.
 function actualizarSelectoresCuenta() {
   const hasCA = !!currentUser?.accountNumCajaAhorro;
   const grupos = [
-    'buy-usd-cuenta-group', 'sell-usd-cuenta-group',
-    'pr-cuenta-group', 'pf-cuenta-group',
-    'comprar-acc-cuenta-group', 'vender-acc-cuenta-group',
-    'tf-dest-cuenta-group', 'tf-ca-dest-cuenta-group',
+    'buy-usd-cuenta-group','sell-usd-cuenta-group',
+    'pr-cuenta-group','pf-cuenta-group',
+    'comprar-acc-cuenta-group','vender-acc-cuenta-group',
+    'tf-dest-cuenta-group','tf-ca-dest-cuenta-group',
   ];
-  grupos.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = hasCA ? '' : 'none';
-  });
-  // Mover fondos en OTRAS OPERACIONES
+  grupos.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = hasCA ? '' : 'none'; });
   const btnMover = document.getElementById('btn-mover-fondos-home');
   if (btnMover) btnMover.style.display = hasCA ? '' : 'none';
 }
 
-// Verifica si el destinatario tiene CA y muestra/oculta el selector
-// de cuenta destino. Se llama on-input del campo usuario destino.
 let _checkDestinoTimer = null;
 function checkDestinoCA(inputId, groupId) {
   clearTimeout(_checkDestinoTimer);
   const dest = document.getElementById(inputId)?.value.trim().toLowerCase();
   const group = document.getElementById(groupId);
   if (!group) return;
-  if (!dest || dest.length < 2) { group.style.display = 'none'; return; }
+  if (!currentUser?.accountNumCajaAhorro || !dest || dest.length < 2) { group.style.display = 'none'; return; }
   _checkDestinoTimer = setTimeout(async () => {
-    if (!currentUser?.accountNumCajaAhorro) { group.style.display = 'none'; return; }
     try {
       const snap = await db.collection('users').doc(dest).get();
-      if (snap.exists && snap.data().accountNumCajaAhorro) {
-        group.style.display = '';
-      } else {
-        group.style.display = 'none';
-      }
+      group.style.display = (snap.exists && snap.data().accountNumCajaAhorro) ? '' : 'none';
     } catch(e) { group.style.display = 'none'; }
   }, 600);
 }
 
-// Helper: obtener cuenta elegida de un select (cc o ca)
 function getCuentaElegida(selectId) {
   const el = document.getElementById(selectId);
-  if (!el || el.closest('.cuenta-selector-group')?.style.display === 'none') return 'cc';
-  return el.value;
+  if (!el) return 'cc';
+  const group = el.closest('.cuenta-selector-group');
+  if (group && group.style.display === 'none') return 'cc';
+  return el.value || 'cc';
 }
 
 // ════════════════════════════════════════════════════════════════
