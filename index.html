@@ -255,6 +255,19 @@
     .cuenta-selector-group label{display:block;font-size:11px;color:var(--text2);letter-spacing:.8px;font-weight:700;margin-bottom:6px;}
     .cuenta-select{width:100%;padding:10px 14px;background:var(--gray);border:1.5px solid var(--gray2);border-radius:8px;color:var(--text);font-size:13px;outline:none;}
     .cuenta-select:focus{border-color:var(--red);}
+
+    /* ── SLIDER DE CUENTAS ── */
+    .accounts-slider-wrap{position:relative;margin-bottom:1.25rem;}
+    .accounts-slider{display:flex;overflow:hidden;border-radius:16px;}
+    .accounts-slider .balance-card{flex:0 0 100%;border-radius:16px;transition:none;}
+    .slider-nav{display:flex;align-items:center;justify-content:space-between;margin-top:.6rem;padding:0 .25rem;}
+    .slider-dots{display:flex;gap:6px;align-items:center;}
+    .slider-dot{width:8px;height:8px;border-radius:50%;background:var(--gray3);transition:all .2s;cursor:pointer;}
+    .slider-dot.active{background:var(--red);width:20px;border-radius:4px;}
+    .slider-arrow{width:28px;height:28px;border-radius:50%;border:none;background:var(--gray2);color:var(--text2);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+    .slider-arrow:hover{background:var(--gray3);}
+    .slider-arrow:disabled{opacity:.3;cursor:not-allowed;}
+    .slider-label{font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.5px;}
     @media(max-width:600px){
       .login-side{display:none;}
       .balances-row{grid-template-columns:1fr;}
@@ -334,20 +347,32 @@
     </div>
     <div class="dash-content">
       <div id="utab-home">
-        <div class="balances-row">
-          <div class="balance-card">
-            <div><div class="balance-label">CUENTA CORRIENTE ARS</div><div class="balance-amount" id="dash-balance-ars">$ 0</div><div class="balance-account">Cuenta corriente · Nº <span id="dash-accnum"></span></div><div id="dash-descubierto-info" style="display:none;font-size:10px;color:#ef9a9a;margin-top:4px;"></div></div>
-            <div><div class="balance-pill pill-ars">CC</div></div>
+        <!-- SLIDER DE CUENTAS -->
+        <div class="accounts-slider-wrap">
+          <div class="accounts-slider" id="accounts-slider">
+            <!-- Slide 0: Caja de Ahorro ARS (oculta si no tiene CA) -->
+            <div class="balance-card ca-card" id="slide-ca" style="display:none;">
+              <div><div class="balance-label">CAJA DE AHORRO ARS</div><div class="balance-amount" id="dash-balance-ca">$ 0</div><div class="balance-account">Caja de ahorro · Nº <span id="dash-accnum-ca"></span></div></div>
+              <div><div class="balance-pill pill-ca">CA</div></div>
+            </div>
+            <!-- Slide 1: Cuenta Corriente ARS (siempre visible) -->
+            <div class="balance-card" id="slide-cc">
+              <div><div class="balance-label">CUENTA CORRIENTE ARS</div><div class="balance-amount" id="dash-balance-ars">$ 0</div><div class="balance-account">Cuenta corriente · Nº <span id="dash-accnum"></span></div><div id="dash-descubierto-info" style="display:none;font-size:10px;color:#ef9a9a;margin-top:4px;"></div></div>
+              <div><div class="balance-pill pill-ars">CC</div></div>
+            </div>
+            <!-- Slide 2: Caja de Ahorro USD (oculta si no tiene USD) -->
+            <div class="balance-card usd-card" id="slide-usd">
+              <div><div class="balance-label">SALDO EN DÓLARES</div><div class="balance-amount" id="dash-balance-usd">—</div><div class="balance-account" id="usd-account-label"></div></div>
+              <div><div class="balance-pill pill-usd">USD</div></div>
+            </div>
           </div>
-          <div class="balance-card usd-card">
-            <div><div class="balance-label">SALDO EN DÓLARES</div><div class="balance-amount" id="dash-balance-usd">—</div><div class="balance-account" id="usd-account-label"></div></div>
-            <div><div class="balance-pill pill-usd">USD</div></div>
+          <div class="slider-nav">
+            <button class="slider-arrow" id="slider-prev" onclick="sliderNav(-1)" disabled>‹</button>
+            <div class="slider-dots" id="slider-dots"></div>
+            <button class="slider-arrow" id="slider-next" onclick="sliderNav(1)">›</button>
           </div>
         </div>
-        <div id="ca-balance-card" class="balance-card ca-card" style="display:none;margin-bottom:1.25rem;">
-          <div><div class="balance-label">CAJA DE AHORRO ARS</div><div class="balance-amount" id="dash-balance-ca">$ 0</div><div class="balance-account">Caja de ahorro · Nº <span id="dash-accnum-ca"></span></div></div>
-          <div><div class="balance-pill pill-ca">CA</div></div>
-        </div>
+        <!-- Banner abrir CA (solo si no tiene) -->
         <div id="ca-closed-home" class="ca-closed-banner" style="display:none">
           <p>Abrí tu caja de ahorro ARS y generá intereses sobre tu saldo.</p>
           <button class="btn-open-ca" onclick="abrirCajaAhorro()">Abrir caja de ahorro</button>
@@ -359,11 +384,13 @@
           <div class="fx-sep"></div>
           <div class="fx-item" style="color:var(--text3);font-size:11px;" id="today-label"></div>
         </div>
+        <div id="ops-cc-home">
         <div class="section-title">OPERACIONES ARS — CUENTA CORRIENTE</div>
         <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(2,1fr);">
           <div class="action-card" onclick="openModal('transfer')"><div class="action-icon">↗</div><div class="action-text"><div class="action-title">Transferir $</div><div class="action-desc">Desde Cta. Cte.</div></div></div>
           <div class="action-card" onclick="openModal('deposit')"><div class="action-icon">↙</div><div class="action-text"><div class="action-title">Depositar $</div><div class="action-desc">En Cta. Cte.</div></div></div>
         </div>
+        </div><!-- /ops-cc-home -->
         <div id="ca-actions-home" style="display:none">
           <div class="section-title">OPERACIONES ARS — CAJA DE AHORRO</div>
           <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(2,1fr);">
@@ -377,6 +404,7 @@
           <div class="action-card" onclick="userTab('plazos');openModal('new-plazo')"><div class="action-icon green">%</div><div class="action-text"><div class="action-title">Plazo Fijo</div><div class="action-desc">Invertir dinero</div></div></div>
           <div id="btn-mover-fondos-home" class="action-card" style="display:none" onclick="openModal('mover-fondos')"><div class="action-icon teal">⇄</div><div class="action-text"><div class="action-title">Mover fondos</div><div class="action-desc">Entre mis cuentas</div></div></div>
         </div>
+        <div id="ops-usd-home">
         <div class="section-title">OPERACIONES USD</div>
         <div id="usd-actions-home" class="actions-grid">
           <div class="action-card blue-card" onclick="openModal('comprar-usd')"><div class="action-icon blue">+$</div><div class="action-text"><div class="action-title">Comprar USD</div><div class="action-desc">Pesos → Dólares</div></div></div>
@@ -387,6 +415,7 @@
           <p>No tenés cuenta en USD. Abrila gratis.</p>
           <button class="btn-open-usd" onclick="abrirCuentaUSD()">Abrir cuenta USD</button>
         </div>
+        </div><!-- /ops-usd-home -->
         <div class="section-title">ÚLTIMOS MOVIMIENTOS</div>
         <div class="card-box" id="tx-list"></div>
       </div>
