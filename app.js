@@ -528,6 +528,16 @@ function simVenta() {
 }
  
 // ─── OPERACIONES FX ──────────────────────────────────────────────
+
+// Abre el modal de compra USD preseleccionando la cuenta de débito.
+// Llamado desde los botones de CC y CA en el inicio.
+// Los botones de OPERACIONES USD siguen usando openModal directamente (sin preselección).
+function abrirComprarUSD(cuentaOrigen) {
+  openModal('comprar-usd');
+  const sel = document.getElementById('buy-usd-cuenta');
+  if (sel) sel.value = cuentaOrigen;
+}
+
 async function doComprarUSD() {
   const usd = parseFloat(document.getElementById('buy-usd-amt').value);
   const err = document.getElementById('buy-error'); err.classList.remove('show');
