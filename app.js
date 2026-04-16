@@ -1332,7 +1332,7 @@ function actualizarSelectoresCuenta() {
     'comprar-acc-cuenta-group','vender-acc-cuenta-group',
     'tf-dest-cuenta-group','tf-ca-dest-cuenta-group',
   ];
-  grupos.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = hasCA ? '' : 'none'; });
+  grupos.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = hasCA ? 'block' : 'none'; });
   const btnMover = document.getElementById('btn-mover-fondos-home');
   if (btnMover) btnMover.style.display = hasCA ? '' : 'none';
 }
