@@ -457,39 +457,50 @@ async function doComprarUSD() {
   if (!currentUser.accountNumUSD) { err.textContent = 'Primero abrí tu cuenta en USD.'; err.classList.add('show'); return; }
   if (!usd || usd <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
   const ars = usd * localConfig.tcVenta;
-  if (ars > currentUser.balance) { err.textContent = 'Saldo ARS insuficiente (necesitás ' + fmtARS(ars) + ').'; err.classList.add('show'); return; }
+  const cuentaOrigen = getCuentaElegida('buy-usd-cuenta');
+  const balOrigen = cuentaOrigen === 'ca' ? (currentUser.balanceCajaAhorro || 0) : (currentUser.balance || 0);
+  if (ars > balOrigen) { err.textContent = 'Saldo insuficiente en ' + (cuentaOrigen === 'ca' ? 'caja de ahorro' : 'cuenta corriente') + ' (necesitás ' + fmtARS(ars) + ').'; err.classList.add('show'); return; }
   const txId = (currentUser.txCounter || 200) + 1;
-  await db.collection('users').doc(currentUser.id).update({
-    balance: currentUser.balance - ars,
-    balanceUSD: currentUser.balanceUSD + usd,
-    txCounter: txId,
-    transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Compra de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: ars, date: todayStr() }),
-    txUSD: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Compra de divisas al TC ' + fmtTC(localConfig.tcVenta) + '/USD', amount: usd, date: todayStr() }),
-  });
+  const cuentaLabel = cuentaOrigen === 'ca' ? ' (desde Caja Ahorro)' : '';
+  const upd = { balanceUSD: (currentUser.balanceUSD || 0) + usd, txCounter: txId,
+    txUSD: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Compra de divisas al TC ' + fmtTC(localConfig.tcVenta) + '/USD', amount: usd, date: todayStr() }) };
+  if (cuentaOrigen === 'ca') {
+    upd.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) - ars;
+    upd.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Compra de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: ars, date: todayStr() });
+  } else {
+    upd.balance = (currentUser.balance || 0) - ars;
+    upd.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Compra de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: ars, date: todayStr() });
+  }
+  await db.collection('users').doc(currentUser.id).update(upd);
   closeModal('comprar-usd');
   document.getElementById('buy-usd-amt').value = '';
   document.getElementById('buy-sim').style.display = 'none';
-  showNotif('✓ Compraste ' + fmtUSD(usd) + ' por ' + fmtARS(ars), 'info');
+  showNotif('✓ Compraste ' + fmtUSD(usd) + ' por ' + fmtARS(ars) + cuentaLabel, 'info');
 }
  
 async function doVenderUSD() {
   const usd = parseFloat(document.getElementById('sell-usd-amt').value);
   const err = document.getElementById('sell-error'); err.classList.remove('show');
   if (!usd || usd <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
-  if (usd > currentUser.balanceUSD) { err.textContent = 'Saldo USD insuficiente.'; err.classList.add('show'); return; }
+  if (usd > (currentUser.balanceUSD || 0)) { err.textContent = 'Saldo USD insuficiente.'; err.classList.add('show'); return; }
   const ars = usd * localConfig.tcCompra;
+  const cuentaDestino = getCuentaElegida('sell-usd-cuenta');
   const txId = (currentUser.txCounter || 200) + 1;
-  await db.collection('users').doc(currentUser.id).update({
-    balance: currentUser.balance + ars,
-    balanceUSD: currentUser.balanceUSD - usd,
-    txCounter: txId,
-    transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Venta de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcCompra), amount: ars, date: todayStr() }),
-    txUSD: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Venta de divisas al TC ' + fmtTC(localConfig.tcCompra) + '/USD', amount: usd, date: todayStr() }),
-  });
+  const cuentaLabel = cuentaDestino === 'ca' ? ' (a Caja Ahorro)' : '';
+  const upd = { balanceUSD: (currentUser.balanceUSD || 0) - usd, txCounter: txId,
+    txUSD: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Venta de divisas al TC ' + fmtTC(localConfig.tcCompra) + '/USD', amount: usd, date: todayStr() }) };
+  if (cuentaDestino === 'ca') {
+    upd.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) + ars;
+    upd.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Venta de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcCompra), amount: ars, date: todayStr() });
+  } else {
+    upd.balance = (currentUser.balance || 0) + ars;
+    upd.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Venta de ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcCompra), amount: ars, date: todayStr() });
+  }
+  await db.collection('users').doc(currentUser.id).update(upd);
   closeModal('vender-usd');
   document.getElementById('sell-usd-amt').value = '';
   document.getElementById('sell-sim').style.display = 'none';
-  showNotif('✓ Vendiste ' + fmtUSD(usd) + ' y recibiste ' + fmtARS(ars), 'info');
+  showNotif('✓ Vendiste ' + fmtUSD(usd) + ' y recibiste ' + fmtARS(ars) + cuentaLabel, 'info');
 }
  
 async function doTransferUSD() {
@@ -552,16 +563,22 @@ async function doTransfer() {
   if (_nuevoBalTf >= 0) _tfUpdate.descubierto = null;
   const batch = db.batch();
   batch.update(db.collection('users').doc(currentUser.id), _tfUpdate);
-  batch.update(db.collection('users').doc(dest), {
-    balance: (target.balance || 0) + amount,
-    transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Transferencia de ' + currentUser.name, amount, date: d }),
-  });
+  const cuentaDestTf = getCuentaElegida('tf-dest-cuenta');
+  const destUpdTf = {};
+  if (cuentaDestTf === 'ca' && target.accountNumCajaAhorro) {
+    destUpdTf.balanceCajaAhorro = (target.balanceCajaAhorro || 0) + amount;
+    destUpdTf.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Transferencia de ' + currentUser.name + ' (a tu Caja Ahorro)', amount, date: d });
+  } else {
+    destUpdTf.balance = (target.balance || 0) + amount;
+    destUpdTf.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Transferencia de ' + currentUser.name, amount, date: d });
+  }
+  batch.update(db.collection('users').doc(dest), destUpdTf);
   await batch.commit();
   closeModal('transfer');
   document.getElementById('tf-dest').value = '';
   document.getElementById('tf-amount').value = '';
   if (_nuevoBalTf < 0) showNotif('✓ Transferencia realizada. Saldo en descubierto: ' + fmtARS(_nuevoBalTf), 'warn');
-  else showNotif('✓ Transferiste ' + fmtARS(amount) + ' a ' + target.name);
+  else showNotif('✓ Transferiste ' + fmtARS(amount) + ' a ' + target.name + (cuentaDestTf === 'ca' ? ' (Caja Ahorro)' : ''));
 }
  
 async function doDeposit() {
@@ -623,16 +640,22 @@ async function doSolicitarPrestamo() {
   const txId = (currentUser.txCounter || 200) + 1;
   const d = todayStr();
   const nuevoPrestamo = { id: txId, capital: C, cuotas: n, cuotaMensual: cuota, cuotasPagas: 0, tna: localConfig.tasaPR, fechaOrigen: d, proximaFecha: fmtDate(addMonths(today(), 1)), montoMora: 0 };
-  await db.collection('users').doc(currentUser.id).update({
-    balance: currentUser.balance + C, txCounter: txId,
-    prestamos: firebase.firestore.FieldValue.arrayUnion(nuevoPrestamo),
-    transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Préstamo acreditado – ' + n + ' cuotas de ' + fmtARS(cuota), amount: C, date: d }),
-  });
+  const cuentaDestPr = getCuentaElegida('pr-cuenta');
+  const cuentaLabelPr = cuentaDestPr === 'ca' ? ' (a Caja Ahorro)' : '';
+  const updPr = { txCounter: txId, prestamos: firebase.firestore.FieldValue.arrayUnion(nuevoPrestamo) };
+  if (cuentaDestPr === 'ca') {
+    updPr.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) + C;
+    updPr.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Préstamo acreditado – ' + n + ' cuotas de ' + fmtARS(cuota), amount: C, date: d });
+  } else {
+    updPr.balance = (currentUser.balance || 0) + C;
+    updPr.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Préstamo acreditado – ' + n + ' cuotas de ' + fmtARS(cuota), amount: C, date: d });
+  }
+  await db.collection('users').doc(currentUser.id).update(updPr);
   closeModal('new-prestamo');
   document.getElementById('pr-capital').value = '';
   document.getElementById('pr-plazo').value = '';
   document.getElementById('pr-sim').style.display = 'none';
-  showNotif('✓ Préstamo de ' + fmtARS(C) + ' acreditado en tu cuenta');
+  showNotif('✓ Préstamo de ' + fmtARS(C) + ' acreditado' + cuentaLabelPr);
 }
  
 function renderPrestamosUser() {
@@ -672,21 +695,28 @@ async function doConstitutirPlazo() {
   const err = document.getElementById('pf-error'); err.classList.remove('show');
   if (!M || M <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
   if (!n || n < 1 || n > 12) { err.textContent = 'El plazo debe ser entre 1 y 12 meses.'; err.classList.add('show'); return; }
-  if (M > currentUser.balance) { err.textContent = 'Saldo insuficiente.'; err.classList.add('show'); return; }
+  const cuentaOrigenPF = getCuentaElegida('pf-cuenta');
+  const balOrigenPF = cuentaOrigenPF === 'ca' ? (currentUser.balanceCajaAhorro || 0) : (currentUser.balance || 0);
+  if (M > balOrigenPF) { err.textContent = 'Saldo insuficiente en ' + (cuentaOrigenPF === 'ca' ? 'caja de ahorro' : 'cuenta corriente') + '.'; err.classList.add('show'); return; }
   const interes = M * (localConfig.tasaPF / 100) * (n / 12);
   const txId = (currentUser.txCounter || 200) + 1;
   const d = todayStr();
   const nuevoPlazo = { id: txId, capital: M, meses: n, tna: localConfig.tasaPF, interes, fechaInicio: d, fechaVenc: fmtDate(addMonths(today(), n)), acreditado: false };
-  await db.collection('users').doc(currentUser.id).update({
-    balance: currentUser.balance - M, txCounter: txId,
-    plazos: firebase.firestore.FieldValue.arrayUnion(nuevoPlazo),
-    transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Constitución plazo fijo – ' + n + ' meses al ' + localConfig.tasaPF + '% TNA', amount: M, date: d }),
-  });
+  const cuentaLabelPF = cuentaOrigenPF === 'ca' ? ' (desde Caja Ahorro)' : '';
+  const updPF = { txCounter: txId, plazos: firebase.firestore.FieldValue.arrayUnion(nuevoPlazo) };
+  if (cuentaOrigenPF === 'ca') {
+    updPF.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) - M;
+    updPF.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Constitución plazo fijo – ' + n + ' meses al ' + localConfig.tasaPF + '% TNA', amount: M, date: d });
+  } else {
+    updPF.balance = (currentUser.balance || 0) - M;
+    updPF.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Constitución plazo fijo – ' + n + ' meses al ' + localConfig.tasaPF + '% TNA', amount: M, date: d });
+  }
+  await db.collection('users').doc(currentUser.id).update(updPF);
   closeModal('new-plazo');
   document.getElementById('pf-monto').value = '';
   document.getElementById('pf-plazo').value = '';
   document.getElementById('pf-sim').style.display = 'none';
-  showNotif('✓ Plazo fijo de ' + fmtARS(M) + ' constituido por ' + n + ' meses');
+  showNotif('✓ Plazo fijo de ' + fmtARS(M) + ' constituido por ' + n + ' meses' + cuentaLabelPF);
 }
  
 function renderPlazosUser() {
@@ -1180,7 +1210,9 @@ async function doComprarAccion() {
   const q = cotizaciones[pendingInvAccion.ticker];
   if (!q) { err.textContent = 'Sin precio disponible.'; err.classList.add('show'); return; }
   const total = q.price * qty;
-  if (total > currentUser.balance) { err.textContent = 'Saldo insuficiente (necesitás ' + fmtARS(total) + ').'; err.classList.add('show'); return; }
+  const cuentaOrigenAcc = getCuentaElegida('comprar-acc-cuenta');
+  const balOrigenAcc = cuentaOrigenAcc === 'ca' ? (currentUser.balanceCajaAhorro || 0) : (currentUser.balance || 0);
+  if (total > balOrigenAcc) { err.textContent = 'Saldo insuficiente en ' + (cuentaOrigenAcc === 'ca' ? 'caja de ahorro' : 'cuenta corriente') + ' (necesitás ' + fmtARS(total) + ').'; err.classList.add('show'); return; }
   const txId = (currentUser.txCounter || 200) + 1;
   let inversiones = [...(currentUser.inversiones || [])];
   const idx = inversiones.findIndex(i => i.ticker === pendingInvAccion.ticker);
@@ -1191,16 +1223,18 @@ async function doComprarAccion() {
   } else {
     inversiones.push({ ticker: pendingInvAccion.ticker, nombre: pendingInvAccion.nombre, cantidad: qty, precioPromedio: q.price });
   }
-  await db.collection('users').doc(currentUser.id).update({
-    balance: currentUser.balance - total, inversiones, txCounter: txId,
-    transactions: firebase.firestore.FieldValue.arrayUnion({
-      id: txId, type: 'debit',
-      desc: `Compra ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`,
-      amount: total, date: todayStr()
-    }),
-  });
+  const cuentaLabelAcc = cuentaOrigenAcc === 'ca' ? ' (desde Caja Ahorro)' : '';
+  const updAcc = { inversiones, txCounter: txId };
+  if (cuentaOrigenAcc === 'ca') {
+    updAcc.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) - total;
+    updAcc.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: `Compra ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`, amount: total, date: todayStr() });
+  } else {
+    updAcc.balance = (currentUser.balance || 0) - total;
+    updAcc.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: `Compra ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`, amount: total, date: todayStr() });
+  }
+  await db.collection('users').doc(currentUser.id).update(updAcc);
   closeModal('comprar-accion');
-  showNotif(`✓ Compraste ${qty} acc. de ${pendingInvAccion.ticker.replace('.BA','')} por ${fmtARS(total)}`);
+  showNotif(`✓ Compraste ${qty} acc. de ${pendingInvAccion.ticker.replace('.BA','')} por ${fmtARS(total)}${cuentaLabelAcc}`);
 }
  
 function abrirVenta(ticker, nombre) {
@@ -1242,16 +1276,19 @@ async function doVenderAccion() {
   const idx = inversiones.findIndex(i => i.ticker === pendingInvAccion.ticker);
   if (tenencia.cantidad - qty <= 0) { inversiones.splice(idx, 1); }
   else { inversiones[idx] = { ...tenencia, cantidad: tenencia.cantidad - qty }; }
-  await db.collection('users').doc(currentUser.id).update({
-    balance: currentUser.balance + total, inversiones, txCounter: txId,
-    transactions: firebase.firestore.FieldValue.arrayUnion({
-      id: txId, type: 'credit',
-      desc: `Venta ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`,
-      amount: total, date: todayStr()
-    }),
-  });
+  const cuentaDestAcc = getCuentaElegida('vender-acc-cuenta');
+  const cuentaLabelVentaAcc = cuentaDestAcc === 'ca' ? ' (a Caja Ahorro)' : '';
+  const updVentaAcc = { inversiones, txCounter: txId };
+  if (cuentaDestAcc === 'ca') {
+    updVentaAcc.balanceCajaAhorro = (currentUser.balanceCajaAhorro || 0) + total;
+    updVentaAcc.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: `Venta ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`, amount: total, date: todayStr() });
+  } else {
+    updVentaAcc.balance = (currentUser.balance || 0) + total;
+    updVentaAcc.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: `Venta ${qty} acc. ${pendingInvAccion.ticker.replace('.BA','')} a ${fmtARS(q.price)}`, amount: total, date: todayStr() });
+  }
+  await db.collection('users').doc(currentUser.id).update(updVentaAcc);
   closeModal('vender-accion');
-  showNotif(`✓ Vendiste ${qty} acc. de ${pendingInvAccion.ticker.replace('.BA','')} por ${fmtARS(total)}`);
+  showNotif(`✓ Vendiste ${qty} acc. de ${pendingInvAccion.ticker.replace('.BA','')} por ${fmtARS(total)}${cuentaLabelVentaAcc}`);
 }
  
 // ─── HISTORIAL DE TRANSACCIONES ───────────────────────────────────
@@ -1282,6 +1319,57 @@ function renderHistorial() {
 }
  
 
+
+// ─── HELPERS DE SELECCIÓN DE CUENTA ──────────────────────────────
+
+// Muestra u oculta los selectores de cuenta en modales según si el
+// usuario tiene CA. Se llama cada vez que se abre un modal relevante.
+function actualizarSelectoresCuenta() {
+  const hasCA = !!currentUser?.accountNumCajaAhorro;
+  const grupos = [
+    'buy-usd-cuenta-group', 'sell-usd-cuenta-group',
+    'pr-cuenta-group', 'pf-cuenta-group',
+    'comprar-acc-cuenta-group', 'vender-acc-cuenta-group',
+    'tf-dest-cuenta-group', 'tf-ca-dest-cuenta-group',
+  ];
+  grupos.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = hasCA ? '' : 'none';
+  });
+  // Mover fondos en OTRAS OPERACIONES
+  const btnMover = document.getElementById('btn-mover-fondos-home');
+  if (btnMover) btnMover.style.display = hasCA ? '' : 'none';
+}
+
+// Verifica si el destinatario tiene CA y muestra/oculta el selector
+// de cuenta destino. Se llama on-input del campo usuario destino.
+let _checkDestinoTimer = null;
+function checkDestinoCA(inputId, groupId) {
+  clearTimeout(_checkDestinoTimer);
+  const dest = document.getElementById(inputId)?.value.trim().toLowerCase();
+  const group = document.getElementById(groupId);
+  if (!group) return;
+  if (!dest || dest.length < 2) { group.style.display = 'none'; return; }
+  _checkDestinoTimer = setTimeout(async () => {
+    if (!currentUser?.accountNumCajaAhorro) { group.style.display = 'none'; return; }
+    try {
+      const snap = await db.collection('users').doc(dest).get();
+      if (snap.exists && snap.data().accountNumCajaAhorro) {
+        group.style.display = '';
+      } else {
+        group.style.display = 'none';
+      }
+    } catch(e) { group.style.display = 'none'; }
+  }, 600);
+}
+
+// Helper: obtener cuenta elegida de un select (cc o ca)
+function getCuentaElegida(selectId) {
+  const el = document.getElementById(selectId);
+  if (!el || el.closest('.cuenta-selector-group')?.style.display === 'none') return 'cc';
+  return el.value;
+}
+
 // ════════════════════════════════════════════════════════════════
 //  MÓDULO CAJA DE AHORRO ARS
 // ════════════════════════════════════════════════════════════════
@@ -1303,6 +1391,7 @@ function syncCADisplay() {
   // Acciones CA en inicio
   const actEl = document.getElementById('ca-actions-home');
   if (actEl) actEl.style.display = hasCA ? '' : 'none';
+  actualizarSelectoresCuenta();
 }
 
 async function abrirCajaAhorro() {
@@ -1356,15 +1445,21 @@ async function doTransferCA() {
     txCajaAhorro: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia a ' + target.name, amount, date: d }),
   });
   // El receptor recibe en su cuenta corriente
-  batch.update(db.collection('users').doc(dest), {
-    balance: (target.balance || 0) + amount,
-    transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Transferencia de ' + currentUser.name + ' (Caja Ahorro)', amount, date: d }),
-  });
+  const cuentaDestCA = getCuentaElegida('tf-ca-dest-cuenta');
+  const destUpdCA = {};
+  if (cuentaDestCA === 'ca' && target.accountNumCajaAhorro) {
+    destUpdCA.balanceCajaAhorro = (target.balanceCajaAhorro || 0) + amount;
+    destUpdCA.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Transferencia de ' + currentUser.name + ' (a tu Caja Ahorro)', amount, date: d });
+  } else {
+    destUpdCA.balance = (target.balance || 0) + amount;
+    destUpdCA.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Transferencia de ' + currentUser.name + ' (desde Caja Ahorro)', amount, date: d });
+  }
+  batch.update(db.collection('users').doc(dest), destUpdCA);
   await batch.commit();
   closeModal('transfer-ca');
   document.getElementById('tf-ca-dest').value = '';
   document.getElementById('tf-ca-amount').value = '';
-  showNotif('✓ Transferiste ' + fmtARS(amount) + ' desde tu caja de ahorro a ' + target.name);
+  showNotif('✓ Transferiste ' + fmtARS(amount) + ' desde tu caja de ahorro a ' + target.name + (cuentaDestCA === 'ca' ? ' (Caja Ahorro)' : ''));
 }
 
 // Mover fondos entre cuentas propias
