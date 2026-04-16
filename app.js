@@ -239,36 +239,51 @@ async function procesarVencimientos() {
   const data = currentUser;
   let changed = false;
   const txs = [...(data.transactions || [])];
+  const txsCA = [...(data.txCajaAhorro || [])];
   const plazos = [...(data.plazos || [])];
   const prestamos = [...(data.prestamos || [])];
   let balance = data.balance;
+  let balanceCA = data.balanceCajaAhorro || 0;
   let txCounter = data.txCounter || 200;
  
-  // Plazos fijos vencidos
+  // Plazos fijos vencidos — acreditar en la cuenta de origen
   plazos.forEach(pf => {
     if (!pf.acreditado && dateFromStr(pf.fechaVenc) <= now) {
       const total = pf.capital + pf.interes;
-      balance += total;
       pf.acreditado = true;
       changed = true;
-      txs.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo – capital + interés', amount: total, date: todayStr() });
+      if (pf.cuentaOrigen === 'ca' && data.accountNumCajaAhorro) {
+        balanceCA += total;
+        txsCA.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo – capital + interés (Caja Ahorro)', amount: total, date: todayStr() });
+      } else {
+        balance += total;
+        txs.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo – capital + interés', amount: total, date: todayStr() });
+      }
     }
   });
- 
-  // Cuotas de préstamos vencidas
+
+  // Cuotas de préstamos vencidas — debitar de la cuenta de origen
   prestamos.forEach(pr => {
     if (pr.cuotasPagas < pr.cuotas) {
       const fechaCuota = dateFromStr(pr.proximaFecha);
       if (fechaCuota <= now) {
         const cuotaAdeudada = pr.cuotaMensual + (pr.montoMora || 0);
-        if (balance >= cuotaAdeudada) {
-          balance -= cuotaAdeudada;
+        const usaCA = pr.cuentaOrigen === 'ca' && data.accountNumCajaAhorro;
+        const saldoDisponible = usaCA ? balanceCA : balance;
+        if (saldoDisponible >= cuotaAdeudada) {
+          if (usaCA) {
+            balanceCA -= cuotaAdeudada;
+            txsCA.push({ id: ++txCounter, type: 'debit', desc: `Cuota préstamo ${pr.cuotasPagas + 1}/${pr.cuotas} (Caja Ahorro)`, amount: cuotaAdeudada, date: todayStr() });
+          } else {
+            balance -= cuotaAdeudada;
+            txs.push({ id: ++txCounter, type: 'debit', desc: `Cuota préstamo ${pr.cuotasPagas}/${pr.cuotas}`, amount: cuotaAdeudada, date: todayStr() });
+          }
           pr.cuotasPagas++;
           pr.montoMora = 0;
           pr.proximaFecha = fmtDate(addMonths(fechaCuota, 1));
           changed = true;
-          txs.push({ id: ++txCounter, type: 'debit', desc: `Cuota préstamo ${pr.cuotasPagas}/${pr.cuotas}`, amount: cuotaAdeudada, date: todayStr() });
         } else {
+          // Saldo insuficiente: aplicar mora sobre balance general (CC) como fallback
           const mora = pr.cuotaMensual * (pr.cuotas - pr.cuotasPagas) * (localConfig.tasaMora / 100);
           pr.montoMora = (pr.montoMora || 0) + mora;
           changed = true;
@@ -279,8 +294,6 @@ async function procesarVencimientos() {
   });
  
   // Caja de ahorro: acreditar intereses el día 1 de cada mes
-  const txsCA = [...(data.txCajaAhorro || [])];
-  let balanceCA = data.balanceCajaAhorro || 0;
   if (data.accountNumCajaAhorro) {
     const hoy = now;
     const esdia1 = hoy.getDate() === 1;
@@ -640,6 +653,17 @@ async function doTransfer() {
   const targetSnap = await db.collection('users').doc(dest).get();
   if (!targetSnap.exists) { err.textContent = 'Usuario "' + dest + '" no encontrado.'; err.classList.add('show'); return; }
   const target = targetSnap.data();
+  // Validar saldo máximo de la cuenta destino del receptor
+  const _saldoMaxTf = localConfig.saldoMaxARS || 50000000;
+  const cuentaDestTf = getCuentaElegida('tf-dest-cuenta');
+  const _balDestTf = (cuentaDestTf === 'ca' && target.accountNumCajaAhorro)
+    ? (target.balanceCajaAhorro || 0) : (target.balance || 0);
+  const _cuentaNombreTf = (cuentaDestTf === 'ca' && target.accountNumCajaAhorro) ? 'caja de ahorro' : 'cuenta corriente';
+  if (_balDestTf + amount > _saldoMaxTf) {
+    const _disponibleDest = Math.max(0, _saldoMaxTf - _balDestTf);
+    err.textContent = target.name + ' no puede recibir ese monto: su ' + _cuentaNombreTf + ' alcanzaría el saldo máximo. Máximo que puede recibir: ' + fmtARS(_disponibleDest) + '.';
+    err.classList.add('show'); return;
+  }
   const txId = (currentUser.txCounter || 200) + 1;
   const d = todayStr();
   const _nuevoBalTf = parseFloat(((currentUser.balance || 0) - amount).toFixed(2));
@@ -653,7 +677,6 @@ async function doTransfer() {
   if (_nuevoBalTf >= 0) _tfUpdate.descubierto = null;
   const batch = db.batch();
   batch.update(db.collection('users').doc(currentUser.id), _tfUpdate);
-  const cuentaDestTf = getCuentaElegida('tf-dest-cuenta');
   const destUpdTf = {};
   if (cuentaDestTf === 'ca' && target.accountNumCajaAhorro) {
     destUpdTf.balanceCajaAhorro = (target.balanceCajaAhorro || 0) + amount;
@@ -735,7 +758,7 @@ async function doSolicitarPrestamo() {
   const cuota = cuotaFrancesa(C, i, n);
   const txId = (currentUser.txCounter || 200) + 1;
   const d = todayStr();
-  const nuevoPrestamo = { id: txId, capital: C, cuotas: n, cuotaMensual: cuota, cuotasPagas: 0, tna: localConfig.tasaPR, fechaOrigen: d, proximaFecha: fmtDate(addMonths(today(), 1)), montoMora: 0 };
+  const nuevoPrestamo = { id: txId, capital: C, cuotas: n, cuotaMensual: cuota, cuotasPagas: 0, tna: localConfig.tasaPR, fechaOrigen: d, proximaFecha: fmtDate(addMonths(today(), 1)), montoMora: 0, cuentaOrigen: cuentaDestPr };
   const cuentaDestPr = getCuentaElegida('pr-cuenta');
   const cuentaLabelPr = cuentaDestPr === 'ca' ? ' (a Caja Ahorro)' : '';
   const updPr = { txCounter: txId, prestamos: firebase.firestore.FieldValue.arrayUnion(nuevoPrestamo) };
@@ -797,7 +820,7 @@ async function doConstitutirPlazo() {
   const interes = M * (localConfig.tasaPF / 100) * (n / 12);
   const txId = (currentUser.txCounter || 200) + 1;
   const d = todayStr();
-  const nuevoPlazo = { id: txId, capital: M, meses: n, tna: localConfig.tasaPF, interes, fechaInicio: d, fechaVenc: fmtDate(addMonths(today(), n)), acreditado: false };
+  const nuevoPlazo = { id: txId, capital: M, meses: n, tna: localConfig.tasaPF, interes, fechaInicio: d, fechaVenc: fmtDate(addMonths(today(), n)), acreditado: false, cuentaOrigen: cuentaOrigenPF };
   const cuentaLabelPF = cuentaOrigenPF === 'ca' ? ' (desde Caja Ahorro)' : '';
   const updPF = { txCounter: txId, plazos: firebase.firestore.FieldValue.arrayUnion(nuevoPlazo) };
   if (cuentaOrigenPF === 'ca') {
@@ -1531,6 +1554,17 @@ async function doTransferCA() {
   const targetSnap = await db.collection('users').doc(dest).get();
   if (!targetSnap.exists) { err.textContent = 'Usuario "' + dest + '" no encontrado.'; err.classList.add('show'); return; }
   const target = targetSnap.data();
+  // Validar saldo máximo de la cuenta destino del receptor
+  const _saldoMaxCA = localConfig.saldoMaxARS || 50000000;
+  const cuentaDestCA = getCuentaElegida('tf-ca-dest-cuenta');
+  const _balDestCA = (cuentaDestCA === 'ca' && target.accountNumCajaAhorro)
+    ? (target.balanceCajaAhorro || 0) : (target.balance || 0);
+  const _cuentaNombreCA = (cuentaDestCA === 'ca' && target.accountNumCajaAhorro) ? 'caja de ahorro' : 'cuenta corriente';
+  if (_balDestCA + amount > _saldoMaxCA) {
+    const _disponibleDestCA = Math.max(0, _saldoMaxCA - _balDestCA);
+    err.textContent = target.name + ' no puede recibir ese monto: su ' + _cuentaNombreCA + ' alcanzaría el saldo máximo. Máximo que puede recibir: ' + fmtARS(_disponibleDestCA) + '.';
+    err.classList.add('show'); return;
+  }
   const txId = (currentUser.txCounter || 200) + 1;
   const d = todayStr();
   const batch = db.batch();
@@ -1539,8 +1573,6 @@ async function doTransferCA() {
     txCounter: txId,
     txCajaAhorro: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia a ' + target.name, amount, date: d }),
   });
-  // El receptor recibe en su cuenta corriente
-  const cuentaDestCA = getCuentaElegida('tf-ca-dest-cuenta');
   const destUpdCA = {};
   if (cuentaDestCA === 'ca' && target.accountNumCajaAhorro) {
     destUpdCA.balanceCajaAhorro = (target.balanceCajaAhorro || 0) + amount;
