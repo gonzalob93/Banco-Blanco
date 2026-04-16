@@ -1343,11 +1343,16 @@ function checkDestinoCA(inputId, groupId) {
   const dest = document.getElementById(inputId)?.value.trim().toLowerCase();
   const group = document.getElementById(groupId);
   if (!group) return;
-  if (!currentUser?.accountNumCajaAhorro || !dest || dest.length < 2) { group.style.display = 'none'; return; }
+  // Si el usuario no tiene CA, nunca mostrar el selector
+  if (!currentUser?.accountNumCajaAhorro) { group.style.display = 'none'; return; }
+  // Mientras escribe (menos de 2 chars), dejar el selector visible como default CC
+  if (!dest || dest.length < 2) { group.style.display = 'block'; return; }
+  // Con 2+ caracteres, consultar Firestore con debounce
   _checkDestinoTimer = setTimeout(async () => {
     try {
       const snap = await db.collection('users').doc(dest).get();
-      group.style.display = (snap.exists && snap.data().accountNumCajaAhorro) ? '' : 'none';
+      // Mostrar solo si el destinatario también tiene CA; si no, ocultar
+      group.style.display = (snap.exists && snap.data().accountNumCajaAhorro) ? 'block' : 'none';
     } catch(e) { group.style.display = 'none'; }
   }, 600);
 }
