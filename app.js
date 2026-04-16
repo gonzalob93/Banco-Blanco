@@ -535,17 +535,24 @@ async function doDeposit() {
   // El crédito primero cubre intereses, luego el saldo negativo
   const _intCobrado = Math.min(_intereses, Math.max(0, amount));
   const _nuevoBalDep = parseFloat((_balAntes - _intCobrado + amount).toFixed(2));
-  const _depUpdate = { balance: _nuevoBalDep, txCounter: txId };
-  // Tx principal
-  _depUpdate.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Depósito propio', amount, date: todayStr() });
-  // Tx de intereses cobrados (si aplica)
-  if (_intCobrado > 0) {
-    _depUpdate.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Intereses por giro en descubierto (' + (localConfig.tasaDescubierto || 50) + '% TNA)', amount: _intCobrado, date: todayStr() });
-  }
+  // Construir array de transacciones — el depósito siempre aparece,
+  // y si hubo intereses se agrega una segunda entrada con id diferente
+  const _txDeposito  = { id: txId,     type: 'credit', desc: 'Depósito propio', amount, date: todayStr() };
+  const _txIntereses = { id: txId + 1, type: 'debit',  desc: 'Intereses por giro en descubierto (' + (localConfig.tasaDescubierto || 50) + '% TNA)', amount: _intCobrado, date: todayStr() };
+  const _depUpdate = { balance: _nuevoBalDep, txCounter: txId + 1 };
   // Actualizar estado del descubierto
   if (_nuevoBalDep >= 0) { _depUpdate.descubierto = null; }
-  else if (_intCobrado > 0) { _depUpdate.descubierto = { fechaInicio: todayStr() }; } // reiniciar contador
-  await db.collection('users').doc(currentUser.id).update(_depUpdate);
+  else if (_intCobrado > 0) { _depUpdate.descubierto = { fechaInicio: todayStr() }; }
+  // Aplicar las transacciones por separado para que Firestore las registre ambas
+  await db.collection('users').doc(currentUser.id).update({
+    ..._depUpdate,
+    transactions: firebase.firestore.FieldValue.arrayUnion(_txDeposito),
+  });
+  if (_intCobrado > 0) {
+    await db.collection('users').doc(currentUser.id).update({
+      transactions: firebase.firestore.FieldValue.arrayUnion(_txIntereses),
+    });
+  }
   closeModal('deposit');
   document.getElementById('dep-amount').value = '';
   if (_intCobrado > 0) showNotif('✓ Depósito realizado. Intereses cobrados: ' + fmtARS(_intCobrado), 'warn');
