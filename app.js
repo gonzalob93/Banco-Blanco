@@ -65,6 +65,8 @@ function showScreen(id) {
 function openModal(id) {
   document.querySelectorAll('.error-msg').forEach(e => e.classList.remove('show'));
   document.getElementById('modal-' + id).classList.add('open');
+  // Mostrar/ocultar selectores de cuenta según si el usuario tiene CA
+  if (typeof actualizarSelectoresCuenta === 'function') actualizarSelectoresCuenta();
 }
 function closeModal(id) {
   document.getElementById('modal-' + id).classList.remove('open');
