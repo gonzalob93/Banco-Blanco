@@ -92,7 +92,7 @@ async function ensureConfig() {
   const ref = db.collection('config').doc('global');
   const snap = await ref.get();
   if (!snap.exists) {
-    const defaults = { tasaPF: 10, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tcCompra: 1370, tcVenta: 1400 };
+    const defaults = { tasaPF: 10, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tasaCA: 4, tcCompra: 1370, tcVenta: 1400 };
     await ref.set(defaults);
     localConfig = defaults;
   } else {
@@ -276,10 +276,48 @@ async function procesarVencimientos() {
     }
   });
  
+  // Caja de ahorro: acreditar intereses el día 1 de cada mes
+  const txsCA = [...(data.txCajaAhorro || [])];
+  let balanceCA = data.balanceCajaAhorro || 0;
+  if (data.accountNumCajaAhorro) {
+    const hoy = now;
+    const esdia1 = hoy.getDate() === 1;
+    const mesActual = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+    const ultimaAcreditacion = data.ultimaAcreditacionCA || '';
+    if (esdia1 && ultimaAcreditacion !== mesActual && (data.interesesCAacumulados || 0) > 0) {
+      const intCA = parseFloat((data.interesesCAacumulados || 0).toFixed(2));
+      balanceCA += intCA;
+      changed = true;
+      txsCA.push({ id: ++txCounter, type: 'credit', desc: 'Intereses caja de ahorro – ' + (localConfig.tasaCA || 4) + '% TNA', amount: intCA, date: todayStr() });
+    }
+    // Acumular interés diario (silencioso, no genera transacción)
+    const ultimoCalculo = data.ultimoCalculoCA || '';
+    const hoyStr = todayStr();
+    if (ultimoCalculo !== hoyStr && balanceCA > 0) {
+      const intDiario = parseFloat((balanceCA * ((localConfig.tasaCA || 4) / 100) / 365).toFixed(6));
+      const nuevosAcumulados = parseFloat(((data.interesesCAacumulados || 0) + intDiario).toFixed(6));
+      changed = true;
+      data._nuevosInteresesCA = nuevosAcumulados;
+      data._hoyStr = hoyStr;
+    }
+  }
+
   if (changed) {
-    await db.collection('users').doc(currentUser.id).update({
-      balance, plazos, prestamos, transactions: txs, txCounter,
-    });
+    const upd = { balance, plazos, prestamos, transactions: txs, txCounter };
+    if (data.accountNumCajaAhorro) {
+      upd.balanceCajaAhorro = balanceCA;
+      upd.txCajaAhorro = txsCA;
+      upd.ultimoCalculoCA = data._hoyStr || todayStr();
+      if (data._nuevosInteresesCA !== undefined) upd.interesesCAacumulados = data._nuevosInteresesCA;
+      const hoy = now;
+      const esdia1 = hoy.getDate() === 1;
+      const mesActual = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+      if (esdia1 && (data.ultimaAcreditacionCA || '') !== mesActual && (data.interesesCAacumulados || 0) > 0) {
+        upd.interesesCAacumulados = 0;
+        upd.ultimaAcreditacionCA = mesActual;
+      }
+    }
+    await db.collection('users').doc(currentUser.id).update(upd);
   }
 }
  
@@ -321,6 +359,7 @@ function renderDashboard() {
     }
   }
   document.getElementById('dash-accnum').textContent = currentUser.accountNum;
+  syncCADisplay();
   syncUSDDisplay();
   updateFXLabels();
   renderTxList();
@@ -340,19 +379,25 @@ function syncUSDDisplay() {
   document.getElementById('usd-closed-home').style.display = hasUSD ? 'none' : '';
 }
  
+function buildTxRow(tx, fmtFn, cuentaLabel) {
+  const cls = tx.type === 'credit' ? 'credit' : 'debit';
+  const icon = tx.type === 'credit' ? '↙' : '↗';
+  const label = cuentaLabel ? `<span style="font-size:10px;color:var(--text3);font-weight:700;margin-left:6px;background:var(--gray2);padding:1px 6px;border-radius:8px;">${cuentaLabel}</span>` : '';
+  return `<div class="tx-item">
+    <div class="tx-left"><div class="tx-icon ${cls}">${icon}</div>
+    <div><div class="tx-desc">${tx.desc}${label}</div><div class="tx-date">${tx.date}</div></div></div>
+    <div class="tx-amount ${cls}">${tx.type === 'credit' ? '+ ' : '− '}${fmtFn(tx.amount)}</div>
+  </div>`;
+}
+
 function renderTxList() {
   const el = document.getElementById('tx-list');
-  const txs = [...(currentUser.transactions || [])].reverse();
-  if (!txs.length) { el.innerHTML = '<div class="empty-state">No hay movimientos aún.</div>'; return; }
-  el.innerHTML = txs.slice(0, 5).map(tx => {
-    const cls = tx.type === 'credit' ? 'credit' : 'debit';
-    const icon = tx.type === 'credit' ? '↙' : '↗';
-    return `<div class="tx-item">
-      <div class="tx-left"><div class="tx-icon ${cls}">${icon}</div>
-      <div><div class="tx-desc">${tx.desc}</div><div class="tx-date">${tx.date}</div></div></div>
-      <div class="tx-amount ${cls}">${tx.type === 'credit' ? '+ ' : '− '}${fmtARS(tx.amount)}</div>
-    </div>`;
-  }).join('');
+  // Mezclar últimos movimientos de CC y CA con etiqueta de cuenta
+  const txsCC = (currentUser.transactions || []).map(tx => ({ ...tx, _cuenta: 'Cta. Cte.' }));
+  const txsCA = (currentUser.txCajaAhorro || []).map(tx => ({ ...tx, _cuenta: 'Caja Ahorro' }));
+  const todos = [...txsCC, ...txsCA].sort((a, b) => b.id - a.id);
+  if (!todos.length) { el.innerHTML = '<div class="empty-state">No hay movimientos aún.</div>'; return; }
+  el.innerHTML = todos.slice(0, 5).map(tx => buildTxRow(tx, fmtARS, tx._cuenta)).join('');
 }
  
 // ─── CUENTA USD ───────────────────────────────────────────────────
@@ -535,24 +580,17 @@ async function doDeposit() {
   // El crédito primero cubre intereses, luego el saldo negativo
   const _intCobrado = Math.min(_intereses, Math.max(0, amount));
   const _nuevoBalDep = parseFloat((_balAntes - _intCobrado + amount).toFixed(2));
-  // Construir array de transacciones — el depósito siempre aparece,
-  // y si hubo intereses se agrega una segunda entrada con id diferente
-  const _txDeposito  = { id: txId,     type: 'credit', desc: 'Depósito propio', amount, date: todayStr() };
-  const _txIntereses = { id: txId + 1, type: 'debit',  desc: 'Intereses por giro en descubierto (' + (localConfig.tasaDescubierto || 50) + '% TNA)', amount: _intCobrado, date: todayStr() };
-  const _depUpdate = { balance: _nuevoBalDep, txCounter: txId + 1 };
+  const _depUpdate = { balance: _nuevoBalDep, txCounter: txId };
+  // Tx principal
+  _depUpdate.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Depósito propio', amount, date: todayStr() });
+  // Tx de intereses cobrados (si aplica)
+  if (_intCobrado > 0) {
+    _depUpdate.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Intereses por giro en descubierto (' + (localConfig.tasaDescubierto || 50) + '% TNA)', amount: _intCobrado, date: todayStr() });
+  }
   // Actualizar estado del descubierto
   if (_nuevoBalDep >= 0) { _depUpdate.descubierto = null; }
-  else if (_intCobrado > 0) { _depUpdate.descubierto = { fechaInicio: todayStr() }; }
-  // Aplicar las transacciones por separado para que Firestore las registre ambas
-  await db.collection('users').doc(currentUser.id).update({
-    ..._depUpdate,
-    transactions: firebase.firestore.FieldValue.arrayUnion(_txDeposito),
-  });
-  if (_intCobrado > 0) {
-    await db.collection('users').doc(currentUser.id).update({
-      transactions: firebase.firestore.FieldValue.arrayUnion(_txIntereses),
-    });
-  }
+  else if (_intCobrado > 0) { _depUpdate.descubierto = { fechaInicio: todayStr() }; } // reiniciar contador
+  await db.collection('users').doc(currentUser.id).update(_depUpdate);
   closeModal('deposit');
   document.getElementById('dep-amount').value = '';
   if (_intCobrado > 0) showNotif('✓ Depósito realizado. Intereses cobrados: ' + fmtARS(_intCobrado), 'warn');
@@ -720,6 +758,12 @@ function renderAdminUsers() {
           <button class="btn-sm btn-add" onclick="adminSetLimite('${u.id}')">Setear</button>
         </div>
       </td>
+      <td>${u.accountNumCajaAhorro ? '<strong style="color:var(--green)">' + fmtARS(u.balanceCajaAhorro || 0) + '</strong>' : '<span style="color:var(--text3)">Sin cuenta</span>'}</td>
+      <td>${u.accountNumCajaAhorro ? `<div class="amount-input-row">
+        <input type="number" id="adj-ca-${u.id}" placeholder="Monto" min="0"/>
+        <button class="btn-sm btn-add" onclick="adminAdjustCA('${u.id}','add')">+ CA</button>
+        <button class="btn-sm btn-sub" onclick="adminAdjustCA('${u.id}','sub')">− CA</button>
+      </div>` : '<span style="color:var(--text3);font-size:11px;">—</span>'}</td>
       <td>${u.accountNumUSD ? '<strong style="color:var(--blue)">' + fmtUSD(u.balanceUSD || 0) + '</strong>' : '<span style="color:var(--text3)">Sin cuenta</span>'}</td>
       <td>${u.accountNumUSD ? `<div class="amount-input-row">
         <input type="number" id="adj-usd-${u.id}" placeholder="Monto" min="0"/>
@@ -862,6 +906,7 @@ function loadConfigUI() {
   document.getElementById('cfg-tasa-pr').value = localConfig.tasaPR;
   document.getElementById('cfg-tasa-mora').value = localConfig.tasaMora;
   document.getElementById('cfg-tasa-desc').value = localConfig.tasaDescubierto || 50;
+  document.getElementById('cfg-tasa-ca').value = localConfig.tasaCA || 4;
   document.getElementById('cfg-tc-compra').value = localConfig.tcCompra;
   document.getElementById('cfg-tc-venta').value = localConfig.tcVenta;
 }
@@ -871,11 +916,12 @@ async function saveConfig() {
   const pr   = parseFloat(document.getElementById('cfg-tasa-pr').value);
   const mora = parseFloat(document.getElementById('cfg-tasa-mora').value);
   const desc = parseFloat(document.getElementById('cfg-tasa-desc').value);
+  const ca   = parseFloat(document.getElementById('cfg-tasa-ca').value);
   const tcc  = parseFloat(document.getElementById('cfg-tc-compra').value);
   const tcv  = parseFloat(document.getElementById('cfg-tc-venta').value);
-  if ([pf, pr, mora, desc, tcc, tcv].some(v => isNaN(v) || v < 0)) { showNotif('Verificá que todos los valores sean válidos.', 'error'); return; }
+  if ([pf, pr, mora, desc, ca, tcc, tcv].some(v => isNaN(v) || v < 0)) { showNotif('Verificá que todos los valores sean válidos.', 'error'); return; }
   if (tcc >= tcv) { showNotif('El TC comprador debe ser menor al TC vendedor.', 'error'); return; }
-  const newConfig = { tasaPF: pf, tasaPR: pr, tasaMora: mora, tasaDescubierto: desc, tcCompra: tcc, tcVenta: tcv };
+  const newConfig = { tasaPF: pf, tasaPR: pr, tasaMora: mora, tasaDescubierto: desc, tasaCA: ca, tcCompra: tcc, tcVenta: tcv };
   await db.collection('config').doc('global').set(newConfig);
   localConfig = newConfig;
   updateFXLabels();
@@ -1221,19 +1267,167 @@ function renderHistorial() {
     if (!el) return;
     const lista = [...txs].reverse().filter(t => dentroDeVentana(t.date));
     if (!lista.length) { el.innerHTML = '<div class="empty-state">No hay movimientos en los últimos 3 meses.</div>'; return; }
-    el.innerHTML = lista.map(tx => {
-      const cls = tx.type === 'credit' ? 'credit' : 'debit';
-      return `<div class="tx-item">
-        <div class="tx-left"><div class="tx-icon ${cls}">${tx.type==='credit'?'↙':'↗'}</div>
-        <div><div class="tx-desc">${tx.desc}</div><div class="tx-date">${tx.date}</div></div></div>
-        <div class="tx-amount ${cls}">${tx.type==='credit'?'+ ':'− '}${fmtFn(tx.amount)}</div>
-      </div>`;
-    }).join('');
+    el.innerHTML = lista.map(tx => buildTxRow(tx, fmtFn, null)).join('');
   }
-  renderLista(currentUser.transactions || [], 'hist-ars-list', fmtARS);
+  function renderListaConCuenta(txs, elId, fmtFn, cuentaLabel) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const lista = [...txs].reverse().filter(t => dentroDeVentana(t.date));
+    if (!lista.length) { el.innerHTML = '<div class="empty-state">No hay movimientos en los últimos 3 meses.</div>'; return; }
+    el.innerHTML = lista.map(tx => buildTxRow(tx, fmtFn, cuentaLabel)).join('');
+  }
+  renderListaConCuenta(currentUser.transactions || [], 'hist-ars-list', fmtARS, 'Cta. Cte.');
+  renderListaConCuenta(currentUser.txCajaAhorro || [], 'hist-ca-list', fmtARS, 'Caja Ahorro');
   renderLista(currentUser.txUSD || [], 'hist-usd-list', fmtUSD);
 }
  
+
+// ════════════════════════════════════════════════════════════════
+//  MÓDULO CAJA DE AHORRO ARS
+// ════════════════════════════════════════════════════════════════
+
+function syncCADisplay() {
+  if (!currentUser) return;
+  const hasCA = !!currentUser.accountNumCajaAhorro;
+  const balCA = currentUser.balanceCajaAhorro || 0;
+  // Tarjeta en inicio
+  const cardEl = document.getElementById('ca-balance-card');
+  if (cardEl) cardEl.style.display = hasCA ? '' : 'none';
+  const balEl = document.getElementById('dash-balance-ca');
+  if (balEl) balEl.textContent = fmtARS(balCA);
+  const numEl = document.getElementById('dash-accnum-ca');
+  if (numEl) numEl.textContent = currentUser.accountNumCajaAhorro || '';
+  // Banner abrir
+  const bannerEl = document.getElementById('ca-closed-home');
+  if (bannerEl) bannerEl.style.display = hasCA ? 'none' : '';
+  // Acciones CA en inicio
+  const actEl = document.getElementById('ca-actions-home');
+  if (actEl) actEl.style.display = hasCA ? '' : 'none';
+}
+
+async function abrirCajaAhorro() {
+  if (currentUser.accountNumCajaAhorro) return;
+  const num = 'CA-' + String(Math.floor(Math.random() * 900000) + 100000);
+  await db.collection('users').doc(currentUser.id).update({
+    accountNumCajaAhorro: num,
+    balanceCajaAhorro: 0,
+    txCajaAhorro: [],
+    interesesCAacumulados: 0,
+    ultimoCalculoCA: todayStr(),
+    ultimaAcreditacionCA: '',
+  });
+  showNotif('✓ Caja de ahorro ARS abierta: ' + num);
+}
+
+// Depósito en caja de ahorro
+async function doDepositCA() {
+  const amount = parseFloat(document.getElementById('dep-ca-amount').value);
+  const err = document.getElementById('dep-ca-error'); err.classList.remove('show');
+  if (!amount || amount <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
+  const txId = (currentUser.txCounter || 200) + 1;
+  await db.collection('users').doc(currentUser.id).update({
+    balanceCajaAhorro: (currentUser.balanceCajaAhorro || 0) + amount,
+    txCounter: txId,
+    txCajaAhorro: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Depósito caja de ahorro', amount, date: todayStr() }),
+  });
+  closeModal('deposit-ca');
+  document.getElementById('dep-ca-amount').value = '';
+  showNotif('✓ Depósito de ' + fmtARS(amount) + ' en caja de ahorro');
+}
+
+// Transferencia saliente desde caja de ahorro
+async function doTransferCA() {
+  const dest = document.getElementById('tf-ca-dest').value.trim().toLowerCase();
+  const amount = parseFloat(document.getElementById('tf-ca-amount').value);
+  const err = document.getElementById('tf-ca-error'); err.classList.remove('show');
+  if (!dest) { err.textContent = 'Ingresá el usuario destinatario.'; err.classList.add('show'); return; }
+  if (dest === currentUser.id) { err.textContent = 'No podés transferirte a vos mismo.'; err.classList.add('show'); return; }
+  if (!amount || amount <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
+  if (amount > (currentUser.balanceCajaAhorro || 0)) { err.textContent = 'Saldo insuficiente en caja de ahorro.'; err.classList.add('show'); return; }
+  const targetSnap = await db.collection('users').doc(dest).get();
+  if (!targetSnap.exists) { err.textContent = 'Usuario "' + dest + '" no encontrado.'; err.classList.add('show'); return; }
+  const target = targetSnap.data();
+  const txId = (currentUser.txCounter || 200) + 1;
+  const d = todayStr();
+  const batch = db.batch();
+  batch.update(db.collection('users').doc(currentUser.id), {
+    balanceCajaAhorro: (currentUser.balanceCajaAhorro || 0) - amount,
+    txCounter: txId,
+    txCajaAhorro: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia a ' + target.name, amount, date: d }),
+  });
+  // El receptor recibe en su cuenta corriente
+  batch.update(db.collection('users').doc(dest), {
+    balance: (target.balance || 0) + amount,
+    transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Transferencia de ' + currentUser.name + ' (Caja Ahorro)', amount, date: d }),
+  });
+  await batch.commit();
+  closeModal('transfer-ca');
+  document.getElementById('tf-ca-dest').value = '';
+  document.getElementById('tf-ca-amount').value = '';
+  showNotif('✓ Transferiste ' + fmtARS(amount) + ' desde tu caja de ahorro a ' + target.name);
+}
+
+// Mover fondos entre cuentas propias
+async function doMoverFondos() {
+  const origen = document.getElementById('mover-origen').value;
+  const amount = parseFloat(document.getElementById('mover-amount').value);
+  const err = document.getElementById('mover-error'); err.classList.remove('show');
+  if (!amount || amount <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
+  const balCC = currentUser.balance || 0;
+  const balCA = currentUser.balanceCajaAhorro || 0;
+  if (origen === 'cc') {
+    // CC → CA: permite descubierto igual que una transferencia normal
+    const _limDesc = (currentUser.limiteDescubierto != null) ? currentUser.limiteDescubierto : 50000;
+    if (amount > balCC + _limDesc) { err.textContent = 'Superás el límite disponible en cuenta corriente.'; err.classList.add('show'); return; }
+    const nuevoBalCC = parseFloat((balCC - amount).toFixed(2));
+    const txId = (currentUser.txCounter || 200) + 1;
+    const upd = {
+      balance: nuevoBalCC,
+      balanceCajaAhorro: balCA + amount,
+      txCounter: txId,
+      transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Movimiento a caja de ahorro propia', amount, date: todayStr() }),
+      txCajaAhorro: firebase.firestore.FieldValue.arrayUnion({ id: txId + 1, type: 'credit', desc: 'Movimiento desde cuenta corriente propia', amount, date: todayStr() }),
+    };
+    if (nuevoBalCC < 0 && !(currentUser.descubierto && currentUser.descubierto.fechaInicio)) upd.descubierto = { fechaInicio: todayStr() };
+    if (nuevoBalCC >= 0) upd.descubierto = null;
+    await db.collection('users').doc(currentUser.id).update(upd);
+  } else {
+    // CA → CC: sin descubierto
+    if (amount > balCA) { err.textContent = 'Saldo insuficiente en caja de ahorro.'; err.classList.add('show'); return; }
+    const txId = (currentUser.txCounter || 200) + 1;
+    await db.collection('users').doc(currentUser.id).update({
+      balance: balCC + amount,
+      balanceCajaAhorro: parseFloat((balCA - amount).toFixed(2)),
+      txCounter: txId,
+      txCajaAhorro: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Movimiento a cuenta corriente propia', amount, date: todayStr() }),
+      transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId + 1, type: 'credit', desc: 'Movimiento desde caja de ahorro propia', amount, date: todayStr() }),
+    });
+  }
+  closeModal('mover-fondos');
+  document.getElementById('mover-amount').value = '';
+  showNotif('✓ Fondos movidos entre tus cuentas');
+}
+
+// Admin: ajustar saldo de caja de ahorro
+async function adminAdjustCA(uid, mode) {
+  const inp = document.getElementById('adj-ca-' + uid);
+  const amount = parseFloat(inp.value);
+  if (!amount || amount <= 0) { showNotif('Ingresá un monto válido.', 'error'); return; }
+  const snap = await db.collection('users').doc(uid).get();
+  const u = snap.data();
+  if (!u.accountNumCajaAhorro) { showNotif('El usuario no tiene caja de ahorro.', 'error'); return; }
+  const balCA = u.balanceCajaAhorro || 0;
+  if (mode === 'sub' && amount > balCA) { showNotif('Saldo insuficiente en caja de ahorro.', 'error'); return; }
+  const nuevoBalCA = mode === 'add' ? balCA + amount : balCA - amount;
+  await db.collection('users').doc(uid).update({
+    balanceCajaAhorro: nuevoBalCA,
+    txCajaAhorro: firebase.firestore.FieldValue.arrayUnion({ id: Date.now(), type: mode === 'add' ? 'credit' : 'debit', desc: 'Ajuste caja de ahorro por administrador (' + (mode === 'add' ? '+' : '−') + ')', amount, date: todayStr() }),
+  });
+  inp.value = '';
+  showNotif('✓ Saldo de caja de ahorro actualizado');
+  await renderAdmin();
+}
+
 // ─── CIERRE DE MODALES ────────────────────────────────────────────
 document.querySelectorAll('.modal-overlay').forEach(m => {
   m.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
