@@ -578,6 +578,11 @@
             <p style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1.5px;margin:1rem 0 .75rem;">TIPO DE CAMBIO (ARS por USD)</p>
             <div class="tasa-row"><label>TC Comprador (banco compra / usuario vende)</label><input type="number" id="cfg-tc-compra" step="1" min="0"/><span class="unit">ARS/USD</span></div>
             <div class="tasa-row"><label>TC Vendedor (banco vende / usuario compra)</label><input type="number" id="cfg-tc-venta" step="1" min="0"/><span class="unit">ARS/USD</span></div>
+            <div class="section-divider"></div>
+            <p style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1.5px;margin:.75rem 0 .75rem;">LÍMITES DE DEPÓSITO Y SALDO</p>
+            <div class="tasa-row"><label>Tope máximo por depósito ARS</label><input type="number" id="cfg-tope-dep" step="1000" min="0"/><span class="unit">ARS</span></div>
+            <div class="tasa-row"><label>Saldo máximo por cuenta ARS</label><input type="number" id="cfg-saldo-max" step="1000000" min="0"/><span class="unit">ARS</span></div>
+            <p style="font-size:11px;color:var(--text3);margin-bottom:.75rem;">El saldo máximo USD resulta de dividir el saldo máximo ARS por el TC Vendedor.</p>
             <button class="tasa-save-btn" onclick="saveConfig()">Guardar todos los cambios</button>
           </div>
         </div>
