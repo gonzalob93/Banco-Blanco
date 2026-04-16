@@ -379,16 +379,18 @@
         </div>
         <div id="ops-cc-home">
           <div class="section-title">OPERACIONES ARS — CUENTA CORRIENTE</div>
-          <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(2,1fr);">
+          <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(3,1fr);">
             <div class="action-card" onclick="openModal('transfer')"><div class="action-icon">↗</div><div class="action-text"><div class="action-title">Transferir $</div><div class="action-desc">Desde Cta. Cte.</div></div></div>
             <div class="action-card" onclick="openModal('deposit')"><div class="action-icon">↙</div><div class="action-text"><div class="action-title">Depositar $</div><div class="action-desc">En Cta. Cte.</div></div></div>
+            <div class="action-card blue-card" onclick="abrirComprarUSD('cc')"><div class="action-icon blue">+$</div><div class="action-text"><div class="action-title">Comprar USD</div><div class="action-desc">Desde Cta. Cte.</div></div></div>
           </div>
         </div>
         <div id="ca-actions-home" style="display:none">
           <div class="section-title">OPERACIONES ARS — CAJA DE AHORRO</div>
-          <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(2,1fr);">
+          <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(3,1fr);">
             <div class="action-card" onclick="openModal('transfer-ca')"><div class="action-icon teal">↗</div><div class="action-text"><div class="action-title">Transferir $</div><div class="action-desc">Desde caja de ahorro</div></div></div>
             <div class="action-card" onclick="openModal('deposit-ca')"><div class="action-icon teal">↙</div><div class="action-text"><div class="action-title">Depositar $</div><div class="action-desc">En caja de ahorro</div></div></div>
+            <div class="action-card blue-card" onclick="abrirComprarUSD('ca')"><div class="action-icon blue">+$</div><div class="action-text"><div class="action-title">Comprar USD</div><div class="action-desc">Desde caja de ahorro</div></div></div>
           </div>
         </div>
         <div id="ops-usd-home">
