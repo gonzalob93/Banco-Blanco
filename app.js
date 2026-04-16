@@ -94,7 +94,7 @@ async function ensureConfig() {
   const ref = db.collection('config').doc('global');
   const snap = await ref.get();
   if (!snap.exists) {
-    const defaults = { tasaPF: 10, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tasaCA: 4, tcCompra: 1370, tcVenta: 1400 };
+    const defaults = { tasaPF: 10, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tasaCA: 4, tcCompra: 1370, tcVenta: 1400, topeDeposito: 1000000, saldoMaxARS: 50000000 };
     await ref.set(defaults);
     localConfig = defaults;
   } else {
@@ -537,6 +537,9 @@ async function doComprarUSD() {
   const cuentaOrigen = getCuentaElegida('buy-usd-cuenta');
   const balOrigen = cuentaOrigen === 'ca' ? (currentUser.balanceCajaAhorro || 0) : (currentUser.balance || 0);
   if (ars > balOrigen) { err.textContent = 'Saldo insuficiente en ' + (cuentaOrigen === 'ca' ? 'caja de ahorro' : 'cuenta corriente') + ' (necesitás ' + fmtARS(ars) + ').'; err.classList.add('show'); return; }
+  const _saldoMaxUSD = (localConfig.saldoMaxARS || 50000000) / (localConfig.tcVenta || 1400);
+  const _balUSD = currentUser.balanceUSD || 0;
+  if (_balUSD + usd > _saldoMaxUSD) { err.textContent = 'Superás el saldo máximo en USD (' + fmtUSD(_saldoMaxUSD) + '). Podés comprar hasta ' + fmtUSD(Math.max(0, _saldoMaxUSD - _balUSD)) + '.'; err.classList.add('show'); return; }
   const txId = (currentUser.txCounter || 200) + 1;
   const cuentaLabelBuy = cuentaOrigen === 'ca' ? ' (desde Caja Ahorro)' : '';
   const updBuy = { balanceUSD: (currentUser.balanceUSD || 0) + usd, txCounter: txId,
@@ -662,6 +665,12 @@ async function doDeposit() {
   const amount = parseFloat(document.getElementById('dep-amount').value);
   const err = document.getElementById('dep-error'); err.classList.remove('show');
   if (!amount || amount <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
+  const _topeD = localConfig.topeDeposito || 1000000;
+  const _saldoMax = localConfig.saldoMaxARS || 50000000;
+  if (amount > _topeD) { err.textContent = 'El monto máximo por depósito es ' + fmtARS(_topeD) + '.'; err.classList.add('show'); return; }
+  const _balCC = currentUser.balance || 0;
+  if (_balCC >= _saldoMax) { err.textContent = 'Tu cuenta corriente alcanzó el saldo máximo permitido (' + fmtARS(_saldoMax) + ').'; err.classList.add('show'); return; }
+  if (_balCC + amount > _saldoMax) { err.textContent = 'Este depósito supera el saldo máximo (' + fmtARS(_saldoMax) + '). Podés depositar hasta ' + fmtARS(_saldoMax - _balCC) + '.'; err.classList.add('show'); return; }
   const txId = (currentUser.txCounter || 200) + 1;
   const _balAntes = currentUser.balance || 0;
   // Calcular intereses si venía en descubierto
@@ -1016,6 +1025,8 @@ function loadConfigUI() {
   document.getElementById('cfg-tasa-ca').value = localConfig.tasaCA || 4;
   document.getElementById('cfg-tc-compra').value = localConfig.tcCompra;
   document.getElementById('cfg-tc-venta').value = localConfig.tcVenta;
+  document.getElementById('cfg-tope-dep').value = localConfig.topeDeposito || 1000000;
+  document.getElementById('cfg-saldo-max').value = localConfig.saldoMaxARS || 50000000;
 }
  
 async function saveConfig() {
@@ -1024,11 +1035,14 @@ async function saveConfig() {
   const mora = parseFloat(document.getElementById('cfg-tasa-mora').value);
   const desc = parseFloat(document.getElementById('cfg-tasa-desc').value);
   const ca   = parseFloat(document.getElementById('cfg-tasa-ca').value);
-  const tcc  = parseFloat(document.getElementById('cfg-tc-compra').value);
-  const tcv  = parseFloat(document.getElementById('cfg-tc-venta').value);
-  if ([pf, pr, mora, desc, ca, tcc, tcv].some(v => isNaN(v) || v < 0)) { showNotif('Verificá que todos los valores sean válidos.', 'error'); return; }
+  const tcc     = parseFloat(document.getElementById('cfg-tc-compra').value);
+  const tcv     = parseFloat(document.getElementById('cfg-tc-venta').value);
+  const topeDep = parseFloat(document.getElementById('cfg-tope-dep').value);
+  const saldoMax = parseFloat(document.getElementById('cfg-saldo-max').value);
+  if ([pf, pr, mora, desc, ca, tcc, tcv, topeDep, saldoMax].some(v => isNaN(v) || v < 0)) { showNotif('Verificá que todos los valores sean válidos.', 'error'); return; }
   if (tcc >= tcv) { showNotif('El TC comprador debe ser menor al TC vendedor.', 'error'); return; }
-  const newConfig = { tasaPF: pf, tasaPR: pr, tasaMora: mora, tasaDescubierto: desc, tasaCA: ca, tcCompra: tcc, tcVenta: tcv };
+  if (topeDep > saldoMax) { showNotif('El tope por depósito no puede superar el saldo máximo.', 'error'); return; }
+  const newConfig = { tasaPF: pf, tasaPR: pr, tasaMora: mora, tasaDescubierto: desc, tasaCA: ca, tcCompra: tcc, tcVenta: tcv, topeDeposito: topeDep, saldoMaxARS: saldoMax };
   await db.collection('config').doc('global').set(newConfig);
   localConfig = newConfig;
   updateFXLabels();
@@ -1478,9 +1492,15 @@ async function doDepositCA() {
   const amount = parseFloat(document.getElementById('dep-ca-amount').value);
   const err = document.getElementById('dep-ca-error'); err.classList.remove('show');
   if (!amount || amount <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
+  const _topeDCA = localConfig.topeDeposito || 1000000;
+  const _saldoMaxCA = localConfig.saldoMaxARS || 50000000;
+  if (amount > _topeDCA) { err.textContent = 'El monto máximo por depósito es ' + fmtARS(_topeDCA) + '.'; err.classList.add('show'); return; }
+  const _balCA = currentUser.balanceCajaAhorro || 0;
+  if (_balCA >= _saldoMaxCA) { err.textContent = 'Tu caja de ahorro alcanzó el saldo máximo permitido (' + fmtARS(_saldoMaxCA) + ').'; err.classList.add('show'); return; }
+  if (_balCA + amount > _saldoMaxCA) { err.textContent = 'Este depósito supera el saldo máximo (' + fmtARS(_saldoMaxCA) + '). Podés depositar hasta ' + fmtARS(_saldoMaxCA - _balCA) + '.'; err.classList.add('show'); return; }
   const txId = (currentUser.txCounter || 200) + 1;
   await db.collection('users').doc(currentUser.id).update({
-    balanceCajaAhorro: (currentUser.balanceCajaAhorro || 0) + amount,
+    balanceCajaAhorro: _balCA + amount,
     txCounter: txId,
     txCajaAhorro: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Depósito caja de ahorro', amount, date: todayStr() }),
   });
