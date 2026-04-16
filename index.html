@@ -243,6 +243,14 @@
     .btn-open-comitente{padding:8px 16px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
     .btn-open-comitente:hover{background:#1b5e20;}
     .action-icon.green{background:var(--green-bg);color:var(--green);}
+
+    .balance-card.ca-card{background:#1b3a2d;}
+    .pill-ca{background:#2e7d32;color:#fff;}
+    .btn-open-ca{padding:8px 16px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+    .btn-open-ca:hover{background:#1b5e20;}
+    .ca-closed-banner{background:var(--green-bg);border:1.5px solid #a5d6a7;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+    .ca-closed-banner p{font-size:13px;color:var(--green);font-weight:600;}
+    .action-icon.teal{background:#e0f2f1;color:#00695c;}
     @media(max-width:600px){
       .login-side{display:none;}
       .balances-row{grid-template-columns:1fr;}
@@ -332,6 +340,14 @@
             <div><div class="balance-pill pill-usd">USD</div></div>
           </div>
         </div>
+        <div id="ca-balance-card" class="balance-card ca-card" style="display:none;margin-bottom:1.25rem;">
+          <div><div class="balance-label">CAJA DE AHORRO ARS</div><div class="balance-amount" id="dash-balance-ca">$ 0</div><div class="balance-account">Caja de ahorro · Nº <span id="dash-accnum-ca"></span></div></div>
+          <div><div class="balance-pill pill-ca">CA</div></div>
+        </div>
+        <div id="ca-closed-home" class="ca-closed-banner" style="display:none">
+          <p>Abrí tu caja de ahorro ARS y generá intereses sobre tu saldo.</p>
+          <button class="btn-open-ca" onclick="abrirCajaAhorro()">Abrir caja de ahorro</button>
+        </div>
         <div class="fx-strip">
           <div class="fx-item">TC Comprador: <strong><span id="fx-compra-strip"></span></strong></div>
           <div class="fx-sep"></div>
@@ -339,12 +355,20 @@
           <div class="fx-sep"></div>
           <div class="fx-item" style="color:var(--text3);font-size:11px;" id="today-label"></div>
         </div>
-        <div class="section-title">OPERACIONES ARS</div>
+        <div class="section-title">OPERACIONES ARS — CUENTA CORRIENTE</div>
         <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(4,1fr);">
-          <div class="action-card" onclick="openModal('transfer')"><div class="action-icon">↗</div><div class="action-text"><div class="action-title">Transferir $</div><div class="action-desc">Enviar pesos</div></div></div>
-          <div class="action-card" onclick="openModal('deposit')"><div class="action-icon">↙</div><div class="action-text"><div class="action-title">Depositar $</div><div class="action-desc">Simular ingreso</div></div></div>
+          <div class="action-card" onclick="openModal('transfer')"><div class="action-icon">↗</div><div class="action-text"><div class="action-title">Transferir $</div><div class="action-desc">Desde Cta. Cte.</div></div></div>
+          <div class="action-card" onclick="openModal('deposit')"><div class="action-icon">↙</div><div class="action-text"><div class="action-title">Depositar $</div><div class="action-desc">En Cta. Cte.</div></div></div>
           <div class="action-card" onclick="userTab('prestamos');openModal('new-prestamo')"><div class="action-icon amber">$</div><div class="action-text"><div class="action-title">Préstamo</div><div class="action-desc">Solicitar crédito</div></div></div>
           <div class="action-card" onclick="userTab('plazos');openModal('new-plazo')"><div class="action-icon green">%</div><div class="action-text"><div class="action-title">Plazo Fijo</div><div class="action-desc">Invertir dinero</div></div></div>
+        </div>
+        <div id="ca-actions-home" style="display:none">
+          <div class="section-title">OPERACIONES ARS — CAJA DE AHORRO</div>
+          <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(3,1fr);">
+            <div class="action-card" onclick="openModal('deposit-ca')"><div class="action-icon teal">↙</div><div class="action-text"><div class="action-title">Depositar</div><div class="action-desc">En caja de ahorro</div></div></div>
+            <div class="action-card" onclick="openModal('transfer-ca')"><div class="action-icon teal">↗</div><div class="action-text"><div class="action-title">Transferir</div><div class="action-desc">Desde caja de ahorro</div></div></div>
+            <div class="action-card" onclick="openModal('mover-fondos')"><div class="action-icon teal">⇄</div><div class="action-text"><div class="action-title">Mover fondos</div><div class="action-desc">Entre mis cuentas</div></div></div>
+          </div>
         </div>
         <div class="section-title">OPERACIONES USD</div>
         <div id="usd-actions-home" class="actions-grid">
@@ -433,8 +457,10 @@
         </div>
       </div>
       <div id="utab-historial" style="display:none">
-        <div class="section-title">MOVIMIENTOS ARS</div>
+        <div class="section-title">MOVIMIENTOS CUENTA CORRIENTE ARS</div>
         <div class="card-box" id="hist-ars-list"></div>
+        <div class="section-title" style="margin-top:1.25rem;">MOVIMIENTOS CAJA DE AHORRO ARS</div>
+        <div class="card-box" id="hist-ca-list"></div>
         <div class="section-title" style="margin-top:1.25rem;">MOVIMIENTOS USD</div>
         <div class="card-box" id="hist-usd-list"></div>
         <p style="font-size:11px;color:var(--text3);text-align:center;margin-top:1rem;">Se muestran los movimientos de los últimos 3 meses.</p>
@@ -475,7 +501,7 @@
         <div class="users-table">
           <div class="table-header"><span class="section-title" style="margin:0">CUENTAS DE USUARIOS</span></div>
           <table class="admin-table">
-            <thead><tr><th>USUARIO</th><th>NOMBRE</th><th>SALDO ARS</th><th>AJUSTAR ARS</th><th>LÍMITE DESC.</th><th>SALDO USD</th><th>AJUSTAR USD</th><th>ELIMINAR</th></tr></thead>
+            <thead><tr><th>USUARIO</th><th>NOMBRE</th><th>SALDO C.CTE.</th><th>AJUSTAR C.CTE.</th><th>LÍMITE DESC.</th><th>SALDO C.A.</th><th>AJUSTAR C.A.</th><th>SALDO USD</th><th>AJUSTAR USD</th><th>ELIMINAR</th></tr></thead>
             <tbody id="admin-users-body"></tbody>
           </table>
         </div>
@@ -517,6 +543,7 @@
             <div class="tasa-row"><label>Tasa Préstamos (TNA)</label><input type="number" id="cfg-tasa-pr" step="0.1" min="0"/><span class="unit">%</span></div>
             <div class="tasa-row"><label>Mora mensual</label><input type="number" id="cfg-tasa-mora" step="0.1" min="0"/><span class="unit">%</span></div>
             <div class="tasa-row"><label>Descubierto cuenta corriente (TNA)</label><input type="number" id="cfg-tasa-desc" step="0.1" min="0"/><span class="unit">%</span></div>
+            <div class="tasa-row"><label>Caja de ahorro ARS (TNA)</label><input type="number" id="cfg-tasa-ca" step="0.1" min="0"/><span class="unit">%</span></div>
             <p style="font-size:11px;color:var(--text3);margin-bottom:1rem;">Los cambios aplican a nuevos productos solamente.</p>
             <div class="section-divider"></div>
             <p style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1.5px;margin:1rem 0 .75rem;">TIPO DE CAMBIO (ARS por USD)</p>
@@ -647,6 +674,37 @@
     </div>
     <div id="vender-error" class="error-msg"></div>
     <button class="btn-primary" style="background:var(--red)" onclick="doVenderAccion()">CONFIRMAR VENTA</button>
+  </div></div>
+
+  <!-- MODAL DEPOSITAR CAJA AHORRO -->
+  <div class="modal-overlay" id="modal-deposit-ca"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Depositar en caja de ahorro</span><button class="modal-close" onclick="closeModal('deposit-ca')">✕</button></div>
+    <div class="form-group"><label>MONTO</label><input type="number" id="dep-ca-amount" placeholder="$ 0.00" min="1"/></div>
+    <div id="dep-ca-error" class="error-msg"></div>
+    <button class="btn-primary" style="background:var(--green)" onclick="doDepositCA()">DEPOSITAR</button>
+  </div></div>
+
+  <!-- MODAL TRANSFERIR DESDE CAJA AHORRO -->
+  <div class="modal-overlay" id="modal-transfer-ca"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Transferir desde caja de ahorro</span><button class="modal-close" onclick="closeModal('transfer-ca')">✕</button></div>
+    <div class="form-group"><label>USUARIO DESTINATARIO</label><input type="text" id="tf-ca-dest" placeholder="Nombre de usuario"/></div>
+    <div class="form-group"><label>MONTO</label><input type="number" id="tf-ca-amount" placeholder="$ 0.00" min="1"/></div>
+    <div id="tf-ca-error" class="error-msg"></div>
+    <button class="btn-primary" style="background:var(--green)" onclick="doTransferCA()">CONFIRMAR</button>
+  </div></div>
+
+  <!-- MODAL MOVER FONDOS -->
+  <div class="modal-overlay" id="modal-mover-fondos"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Mover fondos entre mis cuentas</span><button class="modal-close" onclick="closeModal('mover-fondos')">✕</button></div>
+    <div class="form-group"><label>ORIGEN</label>
+      <select id="mover-origen" style="width:100%;padding:11px 14px;background:var(--gray);border:1.5px solid var(--gray2);border-radius:8px;color:var(--text);font-size:14px;outline:none;">
+        <option value="cc">Cuenta corriente → Caja de ahorro</option>
+        <option value="ca">Caja de ahorro → Cuenta corriente</option>
+      </select>
+    </div>
+    <div class="form-group"><label>MONTO</label><input type="number" id="mover-amount" placeholder="$ 0.00" min="1"/></div>
+    <div id="mover-error" class="error-msg"></div>
+    <button class="btn-primary" onclick="doMoverFondos()">CONFIRMAR MOVIMIENTO</button>
   </div></div>
   <div class="notification" id="notif"></div>
 </div>
