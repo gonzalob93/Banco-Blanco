@@ -340,17 +340,15 @@ function userTab(tab) {
 //  MÓDULO SLIDER DE CUENTAS
 // ════════════════════════════════════════════════════════════════
 
-let _sliderIndex = 0;   // índice actual dentro de _sliderSlides
-let _sliderSlides = []; // lista de slides activos (ids)
+let _sliderIndex = 0;
+let _sliderSlides = [];
 
-// Reconstruye qué slides están disponibles según las cuentas del usuario
 function initSlider() {
   _sliderSlides = [];
   if (currentUser.accountNumCajaAhorro) _sliderSlides.push('ca');
-  _sliderSlides.push('cc'); // siempre presente
+  _sliderSlides.push('cc');
   if (currentUser.accountNumUSD) _sliderSlides.push('usd');
 
-  // Ocultar todos los slides, luego mostrar solo los activos
   ['ca','cc','usd'].forEach(id => {
     const el = document.getElementById('slide-' + id);
     if (el) el.style.display = 'none';
@@ -360,10 +358,8 @@ function initSlider() {
     if (el) el.style.display = '';
   });
 
-  // Si el índice actual ya no es válido, resetearlo
   if (_sliderIndex >= _sliderSlides.length) _sliderIndex = 0;
 
-  // Construir los puntos de navegación
   const dotsEl = document.getElementById('slider-dots');
   if (dotsEl) {
     dotsEl.innerHTML = _sliderSlides.map((id, i) =>
@@ -377,24 +373,20 @@ function initSlider() {
 function renderSlider() {
   const activeId = _sliderSlides[_sliderIndex];
 
-  // Mostrar solo el slide activo
   _sliderSlides.forEach((id, i) => {
     const el = document.getElementById('slide-' + id);
     if (el) el.style.display = i === _sliderIndex ? '' : 'none';
   });
 
-  // Dots
   document.querySelectorAll('.slider-dot').forEach((d, i) => {
     d.classList.toggle('active', i === _sliderIndex);
   });
 
-  // Flechas
   const prev = document.getElementById('slider-prev');
   const next = document.getElementById('slider-next');
   if (prev) prev.disabled = _sliderIndex === 0;
   if (next) next.disabled = _sliderIndex === _sliderSlides.length - 1;
 
-  // Mostrar/ocultar secciones de operaciones según slide activo
   const opCC  = document.getElementById('ops-cc-home');
   const opCA  = document.getElementById('ca-actions-home');
   const opUSD = document.getElementById('ops-usd-home');
@@ -460,7 +452,7 @@ function syncUSDDisplay() {
   if (m) m.textContent = hasUSD ? fmtUSD(currentUser.balanceUSD) : 'USD 0,00';
   const a = document.getElementById('usd-accnum-main');
   if (a) a.textContent = hasUSD ? 'Caja de ahorro USD · Nº ' + currentUser.accountNumUSD : '';
-  // usd-actions-home lo controla el slider; solo actualizamos el banner
+  // usd-actions-home lo controla el slider; solo actualizamos el banner de apertura
   document.getElementById('usd-closed-home').style.display = hasUSD ? 'none' : '';
 }
  
@@ -1456,7 +1448,7 @@ function syncCADisplay() {
   if (!currentUser) return;
   const hasCA = !!currentUser.accountNumCajaAhorro;
   const balCA = currentUser.balanceCajaAhorro || 0;
-  // Actualizar datos de la tarjeta CA en el slider
+  // Datos de la tarjeta CA en el slider
   const balEl = document.getElementById('dash-balance-ca');
   if (balEl) balEl.textContent = fmtARS(balCA);
   const numEl = document.getElementById('dash-accnum-ca');
