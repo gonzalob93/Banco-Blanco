@@ -251,6 +251,10 @@
     .ca-closed-banner{background:var(--green-bg);border:1.5px solid #a5d6a7;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:12px;}
     .ca-closed-banner p{font-size:13px;color:var(--green);font-weight:600;}
     .action-icon.teal{background:#e0f2f1;color:#00695c;}
+    .cuenta-select{width:100%;padding:10px 14px;background:var(--gray);border:1.5px solid var(--gray2);border-radius:8px;color:var(--text);font-size:13px;outline:none;margin-bottom:.75rem;}
+    .cuenta-select:focus{border-color:var(--red);}
+    .cuenta-selector-group{display:none;margin-bottom:.75rem;}
+    .cuenta-selector-group label{display:block;font-size:11px;color:var(--text2);letter-spacing:.8px;font-weight:700;margin-bottom:6px;}
     @media(max-width:600px){
       .login-side{display:none;}
       .balances-row{grid-template-columns:1fr;}
@@ -356,19 +360,22 @@
           <div class="fx-item" style="color:var(--text3);font-size:11px;" id="today-label"></div>
         </div>
         <div class="section-title">OPERACIONES ARS — CUENTA CORRIENTE</div>
-        <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(4,1fr);">
+        <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(2,1fr);">
           <div class="action-card" onclick="openModal('transfer')"><div class="action-icon">↗</div><div class="action-text"><div class="action-title">Transferir $</div><div class="action-desc">Desde Cta. Cte.</div></div></div>
           <div class="action-card" onclick="openModal('deposit')"><div class="action-icon">↙</div><div class="action-text"><div class="action-title">Depositar $</div><div class="action-desc">En Cta. Cte.</div></div></div>
-          <div class="action-card" onclick="userTab('prestamos');openModal('new-prestamo')"><div class="action-icon amber">$</div><div class="action-text"><div class="action-title">Préstamo</div><div class="action-desc">Solicitar crédito</div></div></div>
-          <div class="action-card" onclick="userTab('plazos');openModal('new-plazo')"><div class="action-icon green">%</div><div class="action-text"><div class="action-title">Plazo Fijo</div><div class="action-desc">Invertir dinero</div></div></div>
         </div>
         <div id="ca-actions-home" style="display:none">
           <div class="section-title">OPERACIONES ARS — CAJA DE AHORRO</div>
-          <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(3,1fr);">
+          <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(2,1fr);">
             <div class="action-card" onclick="openModal('deposit-ca')"><div class="action-icon teal">↙</div><div class="action-text"><div class="action-title">Depositar</div><div class="action-desc">En caja de ahorro</div></div></div>
             <div class="action-card" onclick="openModal('transfer-ca')"><div class="action-icon teal">↗</div><div class="action-text"><div class="action-title">Transferir</div><div class="action-desc">Desde caja de ahorro</div></div></div>
-            <div class="action-card" onclick="openModal('mover-fondos')"><div class="action-icon teal">⇄</div><div class="action-text"><div class="action-title">Mover fondos</div><div class="action-desc">Entre mis cuentas</div></div></div>
           </div>
+        </div>
+        <div class="section-title">OTRAS OPERACIONES</div>
+        <div class="actions-grid" style="margin-bottom:.75rem;grid-template-columns:repeat(3,1fr);">
+          <div class="action-card" onclick="userTab('prestamos');openModal('new-prestamo')"><div class="action-icon amber">$</div><div class="action-text"><div class="action-title">Préstamo</div><div class="action-desc">Solicitar crédito</div></div></div>
+          <div class="action-card" onclick="userTab('plazos');openModal('new-plazo')"><div class="action-icon green">%</div><div class="action-text"><div class="action-title">Plazo Fijo</div><div class="action-desc">Invertir dinero</div></div></div>
+          <div id="btn-mover-fondos-home" class="action-card" style="display:none" onclick="openModal('mover-fondos')"><div class="action-icon teal">⇄</div><div class="action-text"><div class="action-title">Mover fondos</div><div class="action-desc">Entre mis cuentas</div></div></div>
         </div>
         <div class="section-title">OPERACIONES USD</div>
         <div id="usd-actions-home" class="actions-grid">
@@ -559,7 +566,8 @@
   <!-- MODALES -->
   <div class="modal-overlay" id="modal-transfer"><div class="modal">
     <div class="modal-header"><span class="modal-title">Transferir pesos</span><button class="modal-close" onclick="closeModal('transfer')">✕</button></div>
-    <div class="form-group"><label>USUARIO DESTINATARIO</label><input type="text" id="tf-dest" placeholder="Nombre de usuario"/></div>
+    <div class="form-group"><label>USUARIO DESTINATARIO</label><input type="text" id="tf-dest" placeholder="Nombre de usuario" oninput="checkDestinoCA('tf-dest','tf-dest-cuenta-group')"/></div>
+    <div class="cuenta-selector-group" id="tf-dest-cuenta-group"><label>¿A QUÉ CUENTA DEL DESTINATARIO?</label><select class="cuenta-select" id="tf-dest-cuenta"><option value="cc">Cuenta corriente</option><option value="ca">Caja de ahorro</option></select></div>
     <div class="form-group"><label>MONTO ARS</label><input type="number" id="tf-amount" placeholder="$ 0.00" min="1"/></div>
     <div id="tf-error" class="error-msg"></div>
     <button class="btn-primary" onclick="doTransfer()">CONFIRMAR</button>
@@ -575,6 +583,7 @@
   <div class="modal-overlay" id="modal-comprar-usd"><div class="modal">
     <div class="modal-header"><span class="modal-title">Comprar dólares</span><button class="modal-close" onclick="closeModal('comprar-usd')">✕</button></div>
     <div class="fx-info-box"><strong id="compra-tc-label"></strong>Se debitarán los pesos de tu cuenta ARS.</div>
+    <div class="cuenta-selector-group" id="buy-usd-cuenta-group"><label>¿DESDE QUÉ CUENTA DEBITAR?</label><select class="cuenta-select" id="buy-usd-cuenta"><option value="cc">Cuenta corriente</option><option value="ca">Caja de ahorro</option></select></div>
     <div class="form-group"><label>USD A COMPRAR</label><input type="number" id="buy-usd-amt" placeholder="Ej: 100" min="1" step="any" oninput="simCompra()"/></div>
     <div class="simulacion-box" id="buy-sim" style="display:none">
       <div class="sim-row"><span class="sim-label">USD a recibir</span><span class="sim-value" id="buy-sim-usd"></span></div>
@@ -588,6 +597,7 @@
   <div class="modal-overlay" id="modal-vender-usd"><div class="modal">
     <div class="modal-header"><span class="modal-title">Vender dólares</span><button class="modal-close" onclick="closeModal('vender-usd')">✕</button></div>
     <div class="fx-info-box"><strong id="venta-tc-label"></strong>Se acreditarán los pesos en tu cuenta ARS.</div>
+    <div class="cuenta-selector-group" id="sell-usd-cuenta-group"><label>¿EN QUÉ CUENTA ACREDITAR?</label><select class="cuenta-select" id="sell-usd-cuenta"><option value="cc">Cuenta corriente</option><option value="ca">Caja de ahorro</option></select></div>
     <div class="form-group"><label>USD A VENDER</label><input type="number" id="sell-usd-amt" placeholder="Ej: 100" min="1" step="any" oninput="simVenta()"/></div>
     <div class="simulacion-box" id="sell-sim" style="display:none">
       <div class="sim-row"><span class="sim-label">USD a debitar</span><span class="sim-value" id="sell-sim-usd"></span></div>
@@ -619,6 +629,7 @@
       <div class="sim-row"><span class="sim-label">Total a pagar</span><span class="sim-value" id="pr-sim-total"></span></div>
       <div class="sim-row"><span class="sim-label">1ª cuota</span><span class="sim-value" id="pr-sim-fecha1"></span></div>
     </div>
+    <div class="cuenta-selector-group" id="pr-cuenta-group"><label>¿EN QUÉ CUENTA ACREDITAR?</label><select class="cuenta-select" id="pr-cuenta"><option value="cc">Cuenta corriente</option><option value="ca">Caja de ahorro</option></select></div>
     <div id="pr-error" class="error-msg"></div>
     <button class="btn-primary" onclick="doSolicitarPrestamo()">CONFIRMAR SOLICITUD</button>
   </div></div>
@@ -635,6 +646,7 @@
       <div class="sim-row"><span class="sim-label">Total al vencimiento</span><span class="sim-value" id="pf-sim-total"></span></div>
       <div class="sim-row"><span class="sim-label">Fecha de vencimiento</span><span class="sim-value" id="pf-sim-fecha"></span></div>
     </div>
+    <div class="cuenta-selector-group" id="pf-cuenta-group"><label>¿DESDE QUÉ CUENTA DEBITAR?</label><select class="cuenta-select" id="pf-cuenta"><option value="cc">Cuenta corriente</option><option value="ca">Caja de ahorro</option></select></div>
     <div id="pf-error" class="error-msg"></div>
     <button class="btn-primary" onclick="doConstitutirPlazo()">CONFIRMAR PLAZO FIJO</button>
   </div></div>
@@ -659,6 +671,7 @@
       <div class="sim-row"><span class="sim-label">Cantidad</span><span class="sim-value" id="comprar-sim-qty"></span></div>
       <div class="sim-row"><span class="sim-label">Total a pagar</span><span class="sim-value" id="comprar-sim-total"></span></div>
     </div>
+    <div class="cuenta-selector-group" id="comprar-acc-cuenta-group"><label>¿DESDE QUÉ CUENTA DEBITAR?</label><select class="cuenta-select" id="comprar-acc-cuenta"><option value="cc">Cuenta corriente</option><option value="ca">Caja de ahorro</option></select></div>
     <div id="comprar-error" class="error-msg"></div>
     <button class="btn-primary" style="background:var(--green)" onclick="doComprarAccion()">CONFIRMAR COMPRA</button>
   </div></div>
@@ -672,6 +685,7 @@
       <div class="sim-row"><span class="sim-label">Cantidad</span><span class="sim-value" id="vender-sim-qty"></span></div>
       <div class="sim-row"><span class="sim-label">Total a recibir</span><span class="sim-value" id="vender-sim-total"></span></div>
     </div>
+    <div class="cuenta-selector-group" id="vender-acc-cuenta-group"><label>¿EN QUÉ CUENTA ACREDITAR?</label><select class="cuenta-select" id="vender-acc-cuenta"><option value="cc">Cuenta corriente</option><option value="ca">Caja de ahorro</option></select></div>
     <div id="vender-error" class="error-msg"></div>
     <button class="btn-primary" style="background:var(--red)" onclick="doVenderAccion()">CONFIRMAR VENTA</button>
   </div></div>
@@ -687,7 +701,8 @@
   <!-- MODAL TRANSFERIR DESDE CAJA AHORRO -->
   <div class="modal-overlay" id="modal-transfer-ca"><div class="modal">
     <div class="modal-header"><span class="modal-title">Transferir desde caja de ahorro</span><button class="modal-close" onclick="closeModal('transfer-ca')">✕</button></div>
-    <div class="form-group"><label>USUARIO DESTINATARIO</label><input type="text" id="tf-ca-dest" placeholder="Nombre de usuario"/></div>
+    <div class="form-group"><label>USUARIO DESTINATARIO</label><input type="text" id="tf-ca-dest" placeholder="Nombre de usuario" oninput="checkDestinoCA('tf-ca-dest','tf-ca-dest-cuenta-group')"/></div>
+    <div class="cuenta-selector-group" id="tf-ca-dest-cuenta-group"><label>¿A QUÉ CUENTA DEL DESTINATARIO?</label><select class="cuenta-select" id="tf-ca-dest-cuenta"><option value="cc">Cuenta corriente</option><option value="ca">Caja de ahorro</option></select></div>
     <div class="form-group"><label>MONTO</label><input type="number" id="tf-ca-amount" placeholder="$ 0.00" min="1"/></div>
     <div id="tf-ca-error" class="error-msg"></div>
     <button class="btn-primary" style="background:var(--green)" onclick="doTransferCA()">CONFIRMAR</button>
