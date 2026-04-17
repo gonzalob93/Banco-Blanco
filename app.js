@@ -309,7 +309,21 @@ async function procesarVencimientos() {
     }
   });
  
-  // Caja de ahorro: acreditar intereses el día 1 de cada mes
+  // Cheques recibidos vencidos — expirar si pasaron 30 días sin depositar
+  const chequesRecibidos = [...(data.chequesRecibidos || [])];
+  chequesRecibidos.forEach(ch => {
+    if (ch.estado === 'pendiente') {
+      const emision = dateFromStr(ch.fechaEmision);
+      const diasTranscurridos = Math.floor((now - emision) / 86400000);
+      if (diasTranscurridos > 30) {
+        ch.estado = 'vencido';
+        changed = true;
+      }
+    }
+  });
+  if (chequesRecibidos.some((ch, i) => ch.estado !== (data.chequesRecibidos || [])[i]?.estado)) {
+    changed = true;
+  }
   if (data.accountNumCajaAhorro) {
     const hoy = now;
     const esdia1 = hoy.getDate() === 1;
@@ -334,7 +348,7 @@ async function procesarVencimientos() {
   }
 
   if (changed) {
-    const upd = { balance, plazos, prestamos, transactions: txs, txCounter };
+    const upd = { balance, plazos, prestamos, transactions: txs, txCounter, chequesRecibidos };
     if (data.accountNumCajaAhorro) {
       upd.balanceCajaAhorro = balanceCA;
       upd.txCajaAhorro = txsCA;
@@ -359,7 +373,7 @@ async function procesarVencimientos() {
  
 // ─── DASHBOARD ────────────────────────────────────────────────────
 function userTab(tab) {
-  const TABS = ['home','divisas','prestamos','plazos','inversiones','historial'];
+  const TABS = ['home','divisas','prestamos','plazos','inversiones','historial','cheques'];
   document.querySelectorAll('.user-nav-tab').forEach((t,i) => t.classList.toggle('active', TABS[i] === tab));
   TABS.forEach(t => document.getElementById('utab-' + t).style.display = t === tab ? '' : 'none');
   if (tab === 'divisas')    renderDivisasTab();
@@ -367,6 +381,7 @@ function userTab(tab) {
   if (tab === 'plazos')     renderPlazosUser();
   if (tab === 'inversiones') renderInversiones();
   if (tab === 'historial')  renderHistorial();
+  if (tab === 'cheques')    renderChequesUser();
 }
  
 
@@ -1743,6 +1758,210 @@ async function adminAdjustCA(uid, mode) {
   inp.value = '';
   showNotif('✓ Saldo de caja de ahorro actualizado');
   await renderAdmin();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MÓDULO CHEQUES
+// ════════════════════════════════════════════════════════════════
+
+// Genera número de cheque único
+function generarNroCheque() {
+  return String(Math.floor(Math.random() * 90000000) + 10000000);
+}
+
+// Parsea fecha de input date (YYYY-MM-DD) a Date local
+function parseFechaInput(s) {
+  const [y, m, d] = s.split('-');
+  return new Date(+y, +m - 1, +d);
+}
+
+function renderChequesUser() {
+  const emitidos   = (currentUser.chequesEmitidos   || []).slice().reverse();
+  const recibidos  = (currentUser.chequesRecibidos  || []).slice().reverse();
+
+  // ── Emitidos ──
+  const elE = document.getElementById('cheques-emitidos-list');
+  if (!emitidos.length) {
+    elE.innerHTML = '<div class="empty-state">No emitiste cheques.</div>';
+  } else {
+    elE.innerHTML = emitidos.map(ch => {
+      const badge = badgeCheque(ch.estado);
+      const esDiferido = ch.fechaPago !== ch.fechaEmision;
+      return `<div class="producto-item"><div class="prod-info">
+        <div class="prod-title">Cheque Nº ${ch.nro} — ${fmtARS(ch.monto)} ${badge}</div>
+        <div class="prod-detail">Para: <strong>${ch.destinatario}</strong> · Emitido: ${ch.fechaEmision}${esDiferido ? ' · Pago desde: <strong>' + ch.fechaPago + '</strong>' : ''}</div>
+        ${ch.estado === 'rechazado' ? '<div class="prod-detail" style="color:var(--red)">Rechazado por falta de fondos</div>' : ''}
+      </div></div>`;
+    }).join('');
+  }
+
+  // ── Recibidos ──
+  const elR = document.getElementById('cheques-recibidos-list');
+  if (!recibidos.length) {
+    elR.innerHTML = '<div class="empty-state">No tenés cheques recibidos.</div>';
+  } else {
+    elR.innerHTML = recibidos.map(ch => {
+      const badge = badgeCheque(ch.estado);
+      const esDiferido = ch.fechaPago !== ch.fechaEmision;
+      const now = today();
+      const fechaPagoDate = dateFromStr(ch.fechaPago);
+      const puedeDepositar = ch.estado === 'pendiente' && fechaPagoDate <= now;
+      const noDisponibleAun = ch.estado === 'pendiente' && fechaPagoDate > now;
+      return `<div class="producto-item" style="align-items:flex-start;flex-direction:column;gap:8px;">
+        <div class="prod-info">
+          <div class="prod-title">Cheque Nº ${ch.nro} — ${fmtARS(ch.monto)} ${badge}</div>
+          <div class="prod-detail">De: <strong>${ch.emisor}</strong> · Emitido: ${ch.fechaEmision}${esDiferido ? ' · Disponible desde: <strong>' + ch.fechaPago + '</strong>' : ''}</div>
+          ${ch.estado === 'rechazado' ? '<div class="prod-detail" style="color:var(--red)">Rechazado por falta de fondos del emisor</div>' : ''}
+          ${ch.estado === 'vencido' ? '<div class="prod-detail" style="color:var(--text3)">Venció sin ser depositado (30 días)</div>' : ''}
+          ${noDisponibleAun ? '<div class="prod-detail" style="color:var(--amber)">Cheque diferido — disponible el ' + ch.fechaPago + '</div>' : ''}
+        </div>
+        ${puedeDepositar ? `<button class="btn-sm btn-add" style="font-size:12px;padding:6px 14px;" onclick="depositarCheque('${ch.nro}')">Depositar</button>` : ''}
+      </div>`;
+    }).join('');
+  }
+}
+
+function badgeCheque(estado) {
+  const map = {
+    pendiente:  '<span class="producto-badge badge-prestamo">Pendiente</span>',
+    cobrado:    '<span class="producto-badge badge-plazo">✓ Cobrado</span>',
+    rechazado:  '<span class="producto-badge badge-vencido">✕ Rechazado</span>',
+    vencido:    '<span class="producto-badge" style="background:var(--gray2);color:var(--text3)">Vencido</span>',
+  };
+  return map[estado] || '';
+}
+
+async function emitirCheque() {
+  const destinatario = document.getElementById('ch-dest').value.trim().toLowerCase();
+  const monto        = parseFloat(document.getElementById('ch-monto').value);
+  const fechaPagoRaw = document.getElementById('ch-fecha').value;
+  const err          = document.getElementById('ch-error'); err.classList.remove('show');
+
+  if (!destinatario)      { err.textContent = 'Ingresá el usuario destinatario.';        err.classList.add('show'); return; }
+  if (destinatario === currentUser.id) { err.textContent = 'No podés emitir un cheque a tu propio nombre.'; err.classList.add('show'); return; }
+  if (!monto || monto <= 0) { err.textContent = 'Ingresá un monto válido.';              err.classList.add('show'); return; }
+  if (!fechaPagoRaw)      { err.textContent = 'Ingresá la fecha de pago.';               err.classList.add('show'); return; }
+
+  const fechaPago    = parseFechaInput(fechaPagoRaw);
+  const hoy          = today(); hoy.setHours(0,0,0,0);
+  if (fechaPago < hoy) { err.textContent = 'La fecha de pago no puede ser anterior a hoy.'; err.classList.add('show'); return; }
+
+  // Verificar que el destinatario existe
+  setLoading('btn-emitir-cheque', true);
+  try {
+    const destSnap = await db.collection('users').doc(destinatario).get();
+    if (!destSnap.exists) { err.textContent = 'Usuario "' + destinatario + '" no encontrado.'; err.classList.add('show'); setLoading('btn-emitir-cheque', false); return; }
+
+    const nro        = generarNroCheque();
+    const fechaHoy   = todayStr();
+    const fechaPagoStr = fmtDate(fechaPago);
+
+    const chequeEmitido = {
+      nro, monto, destinatario,
+      fechaEmision: fechaHoy,
+      fechaPago: fechaPagoStr,
+      estado: 'pendiente',
+    };
+    const chequeRecibido = {
+      nro, monto,
+      emisor: currentUser.id,
+      fechaEmision: fechaHoy,
+      fechaPago: fechaPagoStr,
+      estado: 'pendiente',
+    };
+
+    // Guardar en emisor y receptor usando batch
+    const batch = db.batch();
+    batch.update(db.collection('users').doc(currentUser.id), {
+      chequesEmitidos: firebase.firestore.FieldValue.arrayUnion(chequeEmitido),
+    });
+    batch.update(db.collection('users').doc(destinatario), {
+      chequesRecibidos: firebase.firestore.FieldValue.arrayUnion(chequeRecibido),
+    });
+    await batch.commit();
+
+    closeModal('new-cheque');
+    document.getElementById('ch-dest').value  = '';
+    document.getElementById('ch-monto').value = '';
+    document.getElementById('ch-fecha').value = '';
+    showNotif('✓ Cheque Nº ' + nro + ' emitido a ' + destinatario);
+  } catch(e) {
+    err.textContent = 'Error al emitir el cheque. Intentá de nuevo.';
+    err.classList.add('show');
+    console.error(e);
+  }
+  setLoading('btn-emitir-cheque', false);
+}
+
+async function depositarCheque(nro) {
+  const cheque = (currentUser.chequesRecibidos || []).find(ch => ch.nro === nro);
+  if (!cheque || cheque.estado !== 'pendiente') { showNotif('Cheque no disponible.', 'error'); return; }
+
+  // Verificar fecha de pago
+  const fechaPago = dateFromStr(cheque.fechaPago);
+  const now = today(); now.setHours(0,0,0,0);
+  if (fechaPago > now) { showNotif('Este cheque no está disponible aún. Fecha de pago: ' + cheque.fechaPago, 'warn'); return; }
+
+  // Leer datos actuales del emisor
+  const emisorSnap = await db.collection('users').doc(cheque.emisor).get();
+  if (!emisorSnap.exists) { showNotif('No se encontró la cuenta del emisor.', 'error'); return; }
+  const emisor = emisorSnap.data();
+
+  const limDescEmisor  = (emisor.limiteDescubierto != null) ? emisor.limiteDescubierto : 50000;
+  const disponibleEmisor = (emisor.balance || 0) + limDescEmisor;
+  const txId = (currentUser.txCounter || 200) + 1;
+  const d    = todayStr();
+
+  if (disponibleEmisor >= cheque.monto) {
+    // ── CHEQUE APROBADO ──
+    const nuevoBalEmisor = parseFloat(((emisor.balance || 0) - cheque.monto).toFixed(2));
+    const updEmisor = {
+      balance: nuevoBalEmisor,
+      transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Cheque Nº ' + nro + ' cobrado por ' + currentUser.id, amount: cheque.monto, date: d }),
+    };
+    if (nuevoBalEmisor < 0 && !(emisor.descubierto && emisor.descubierto.fechaInicio)) updEmisor.descubierto = { fechaInicio: d };
+    if (nuevoBalEmisor >= 0) updEmisor.descubierto = null;
+
+    // Actualizar estado del cheque en el emisor
+    const emitidosActualizados = (emisor.chequesEmitidos || []).map(ch =>
+      ch.nro === nro ? { ...ch, estado: 'cobrado' } : ch
+    );
+    updEmisor.chequesEmitidos = emitidosActualizados;
+
+    // Actualizar cheque recibido del receptor
+    const recibidosActualizados = (currentUser.chequesRecibidos || []).map(ch =>
+      ch.nro === nro ? { ...ch, estado: 'cobrado' } : ch
+    );
+    const nuevoBalReceptor = parseFloat(((currentUser.balance || 0) + cheque.monto).toFixed(2));
+    const updReceptor = {
+      balance: nuevoBalReceptor,
+      txCounter: txId,
+      chequesRecibidos: recibidosActualizados,
+      transactions: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Depósito cheque Nº ' + nro + ' de ' + cheque.emisor, amount: cheque.monto, date: d }),
+    };
+    if (nuevoBalReceptor >= 0 && currentUser.balance < 0) updReceptor.descubierto = null;
+
+    const batch = db.batch();
+    batch.update(db.collection('users').doc(cheque.emisor), updEmisor);
+    batch.update(db.collection('users').doc(currentUser.id), updReceptor);
+    await batch.commit();
+
+    showNotif('✓ Cheque Nº ' + nro + ' depositado — ' + fmtARS(cheque.monto) + ' acreditados en tu cuenta');
+  } else {
+    // ── CHEQUE RECHAZADO ──
+    const emitidosActualizados = (emisor.chequesEmitidos || []).map(ch =>
+      ch.nro === nro ? { ...ch, estado: 'rechazado' } : ch
+    );
+    const recibidosActualizados = (currentUser.chequesRecibidos || []).map(ch =>
+      ch.nro === nro ? { ...ch, estado: 'rechazado' } : ch
+    );
+    const batch = db.batch();
+    batch.update(db.collection('users').doc(cheque.emisor), { chequesEmitidos: emitidosActualizados });
+    batch.update(db.collection('users').doc(currentUser.id), { chequesRecibidos: recibidosActualizados });
+    await batch.commit();
+
+    showNotif('✕ Cheque Nº ' + nro + ' rechazado — fondos insuficientes del emisor', 'error');
+  }
 }
 
 // ─── CIERRE DE MODALES ────────────────────────────────────────────
