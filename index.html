@@ -342,6 +342,7 @@
       <button class="user-nav-tab" data-tab="plazos" onclick="userTab('plazos')">Plazos Fijos</button>
       <button class="user-nav-tab" data-tab="inversiones" onclick="userTab('inversiones')">Inversiones</button>
       <button class="user-nav-tab" data-tab="cheques" onclick="userTab('cheques')">Cheques</button>
+      <button class="user-nav-tab" data-tab="transferencias-ext" onclick="userTab('transferencias-ext')">Transf. Exterior</button>
       <button class="user-nav-tab" data-tab="historial" onclick="userTab('historial')">Historial</button>
     </div>
     <div class="dash-content">
@@ -497,6 +498,13 @@
         <div class="card-box" id="cheques-emitidos-list"></div>
         <div class="section-title" style="margin-top:1.25rem;">CHEQUES RECIBIDOS</div>
         <div class="card-box" id="cheques-recibidos-list"></div>
+      </div>
+      <div id="utab-transferencias-ext" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <div class="section-title" style="margin:0">TRANSFERENCIAS AL EXTERIOR</div>
+          <button class="btn-primary" style="width:auto;padding:8px 18px;margin:0;font-size:13px;background:var(--blue)" onclick="openModal('new-transf-ext')">+ Nueva transferencia</button>
+        </div>
+        <div class="card-box" id="tx-ext-list"></div>
       </div>
       <div id="utab-historial" style="display:none">
         <div class="section-title">MOVIMIENTOS CUENTA CORRIENTE ARS</div>
@@ -738,6 +746,70 @@
     </div>
     <div id="ch-error" class="error-msg"></div>
     <button class="btn-primary" id="btn-emitir-cheque" onclick="emitirCheque()">EMITIR CHEQUE</button>
+  </div></div>
+
+  <!-- MODAL TRANSFERENCIA AL EXTERIOR -->
+  <div class="modal-overlay" id="modal-new-transf-ext"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Transferencia al exterior</span><button class="modal-close" onclick="closeModal('new-transf-ext')">✕</button></div>
+    <div class="fx-info-box" style="background:var(--blue-bg);color:var(--blue);margin-bottom:1rem;">
+      <strong>Transferencia internacional en USD</strong>
+      El importe se debitará de la cuenta seleccionada. Las transferencias en ARS se convierten al TC Vendedor vigente.
+    </div>
+
+    <div class="form-group"><label>BENEFICIARIO</label><input type="text" id="txe-beneficiario" placeholder="Nombre completo del beneficiario"/></div>
+
+    <div class="form-group"><label>PAÍS</label>
+      <select id="txe-pais" style="width:100%;padding:11px 14px;background:var(--gray);border:1.5px solid var(--gray2);border-radius:8px;color:var(--text);font-size:14px;outline:none;">
+        <option value="">— Seleccioná un país —</option>
+      </select>
+    </div>
+
+    <div style="background:var(--gray);border-radius:10px;padding:1rem;margin-bottom:.75rem;">
+      <p style="font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.8px;margin-bottom:.75rem;">BANCO BENEFICIARIO</p>
+      <div class="two-col" style="margin-bottom:.5rem;">
+        <div class="form-group" style="margin:0"><label>TIPO DE CÓDIGO</label>
+          <select id="txe-tipo-benef" style="width:100%;padding:10px 12px;background:#fff;border:1.5px solid var(--gray2);border-radius:8px;color:var(--text);font-size:13px;outline:none;">
+            <option value="swift">SWIFT</option>
+            <option value="aba">ABA</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label>CÓDIGO</label><input type="text" id="txe-cod-benef" placeholder="Ej: BOFAUS3N" style="text-transform:uppercase"/></div>
+      </div>
+    </div>
+
+    <div style="background:var(--gray);border-radius:10px;padding:1rem;margin-bottom:.75rem;">
+      <p style="font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.8px;margin-bottom:.75rem;">BANCO CORRESPONSAL</p>
+      <div class="two-col" style="margin-bottom:.5rem;">
+        <div class="form-group" style="margin:0"><label>TIPO DE CÓDIGO</label>
+          <select id="txe-tipo-corresp" style="width:100%;padding:10px 12px;background:#fff;border:1.5px solid var(--gray2);border-radius:8px;color:var(--text);font-size:13px;outline:none;">
+            <option value="swift">SWIFT</option>
+            <option value="aba">ABA</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0"><label>CÓDIGO</label><input type="text" id="txe-cod-corresp" placeholder="Ej: CHASUS33" style="text-transform:uppercase"/></div>
+      </div>
+    </div>
+
+    <div class="form-group"><label>NÚMERO DE CUENTA DEL BENEFICIARIO</label><input type="text" id="txe-cuenta-num" placeholder="Ej: 00012345678"/></div>
+
+    <div class="two-col">
+      <div class="form-group"><label>IMPORTE (USD)</label><input type="number" id="txe-importe" placeholder="Ej: 1000" min="1" step="any" oninput="simTransfExt()"/></div>
+      <div class="form-group"><label>DEBITAR DE</label>
+        <select id="txe-cuenta" onchange="simTransfExt()" style="width:100%;padding:11px 14px;background:var(--gray);border:1.5px solid var(--gray2);border-radius:8px;color:var(--text);font-size:13px;outline:none;">
+          <option value="cc">Cuenta corriente ARS</option>
+          <option value="ca">Caja de ahorro ARS</option>
+          <option value="usd">Caja de ahorro USD</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="simulacion-box" id="txe-sim" style="display:none">
+      <div class="sim-row"><span class="sim-label">A debitar</span><span class="sim-value" id="txe-sim-debito"></span></div>
+      <div class="sim-row" id="txe-sim-tc-row"><span class="sim-label">TC Vendedor aplicado</span><span class="sim-value" id="txe-sim-tc"></span></div>
+    </div>
+
+    <div id="txe-error" class="error-msg"></div>
+    <button class="btn-primary" id="btn-txe-confirmar" style="background:var(--blue)" onclick="doTransferenciaExt()">CONFIRMAR TRANSFERENCIA</button>
   </div></div>
 
   <div class="modal-overlay" id="modal-confirm-delete"><div class="confirm-modal">
