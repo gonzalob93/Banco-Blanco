@@ -341,6 +341,7 @@
       <button class="user-nav-tab" onclick="userTab('prestamos')">Préstamos</button>
       <button class="user-nav-tab" onclick="userTab('plazos')">Plazos Fijos</button>
       <button class="user-nav-tab" onclick="userTab('inversiones')">Inversiones</button>
+      <button class="user-nav-tab" onclick="userTab('cheques')">Cheques</button>
       <button class="user-nav-tab" onclick="userTab('historial')">Historial</button>
     </div>
     <div class="dash-content">
@@ -486,6 +487,16 @@
             <div id="port-list"><div class="empty-state">No tenés posiciones abiertas.</div></div>
           </div>
         </div>
+      </div>
+      <div id="utab-cheques" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <div class="section-title" style="margin:0">MIS CHEQUES</div>
+          <button class="btn-primary" style="width:auto;padding:8px 18px;margin:0;font-size:13px" onclick="openModal('new-cheque')">+ Emitir cheque</button>
+        </div>
+        <div class="section-title">CHEQUES EMITIDOS</div>
+        <div class="card-box" id="cheques-emitidos-list"></div>
+        <div class="section-title" style="margin-top:1.25rem;">CHEQUES RECIBIDOS</div>
+        <div class="card-box" id="cheques-recibidos-list"></div>
       </div>
       <div id="utab-historial" style="display:none">
         <div class="section-title">MOVIMIENTOS CUENTA CORRIENTE ARS</div>
@@ -709,6 +720,24 @@
     </div>
     <div id="pf-usd-error" class="error-msg"></div>
     <button class="btn-primary" style="background:var(--blue)" onclick="doConstituirPlazoUSD()">CONFIRMAR PLAZO FIJO USD</button>
+  </div></div>
+
+  <!-- MODAL EMITIR CHEQUE -->
+  <div class="modal-overlay" id="modal-new-cheque"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Emitir cheque</span><button class="modal-close" onclick="closeModal('new-cheque')">✕</button></div>
+    <div style="background:var(--amber-bg);border-radius:10px;padding:.9rem 1rem;margin-bottom:1rem;font-size:12px;color:var(--amber);">
+      <strong style="display:block;margin-bottom:3px;">Cheque sobre cuenta corriente</strong>
+      El monto se debitará al momento en que el destinatario deposite el cheque. Cheques sin depositar vencen a los 30 días.
+    </div>
+    <div class="form-group"><label>USUARIO DESTINATARIO</label><input type="text" id="ch-dest" placeholder="Nombre de usuario"/></div>
+    <div class="form-group"><label>MONTO ($)</label><input type="number" id="ch-monto" placeholder="$ 0.00" min="1"/></div>
+    <div class="form-group">
+      <label>FECHA DE PAGO</label>
+      <input type="date" id="ch-fecha" style="width:100%;padding:11px 14px;background:var(--gray);border:1.5px solid var(--gray2);border-radius:8px;color:var(--text);font-size:14px;outline:none;" onfocus="this.style.borderColor='var(--red)'" onblur="this.style.borderColor='var(--gray2)'"/>
+      <p style="font-size:11px;color:var(--text3);margin-top:5px;">Podés elegir hoy (cheque común) o una fecha futura (cheque diferido).</p>
+    </div>
+    <div id="ch-error" class="error-msg"></div>
+    <button class="btn-primary" id="btn-emitir-cheque" onclick="emitirCheque()">EMITIR CHEQUE</button>
   </div></div>
 
   <div class="modal-overlay" id="modal-confirm-delete"><div class="confirm-modal">
