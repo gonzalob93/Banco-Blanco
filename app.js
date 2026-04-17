@@ -758,8 +758,8 @@ async function doSolicitarPrestamo() {
   const cuota = cuotaFrancesa(C, i, n);
   const txId = (currentUser.txCounter || 200) + 1;
   const d = todayStr();
-  const nuevoPrestamo = { id: txId, capital: C, cuotas: n, cuotaMensual: cuota, cuotasPagas: 0, tna: localConfig.tasaPR, fechaOrigen: d, proximaFecha: fmtDate(addMonths(today(), 1)), montoMora: 0, cuentaOrigen: cuentaDestPr };
   const cuentaDestPr = getCuentaElegida('pr-cuenta');
+  const nuevoPrestamo = { id: txId, capital: C, cuotas: n, cuotaMensual: cuota, cuotasPagas: 0, tna: localConfig.tasaPR, fechaOrigen: d, proximaFecha: fmtDate(addMonths(today(), 1)), montoMora: 0, cuentaOrigen: cuentaDestPr };
   const cuentaLabelPr = cuentaDestPr === 'ca' ? ' (a Caja Ahorro)' : '';
   const updPr = { txCounter: txId, prestamos: firebase.firestore.FieldValue.arrayUnion(nuevoPrestamo) };
   if (cuentaDestPr === 'ca') {
