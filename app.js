@@ -2115,6 +2115,142 @@ async function doTransferenciaExt() {
   setLoading('btn-txe-confirmar', false);
 }
 
+// ════════════════════════════════════════════════════════════════
+//  DESCARGA PDF — HISTORIAL
+// ════════════════════════════════════════════════════════════════
+
+function descargarHistorialPDF() {
+  const TRES_MESES = 90 * 24 * 60 * 60 * 1000;
+  const ahora = new Date();
+
+  function dentroDeVentana(str) {
+    const [d, m, y] = str.split('/');
+    return (ahora - new Date(+y, +m - 1, +d)) <= TRES_MESES;
+  }
+
+  function filasTx(txs, fmtFn) {
+    const lista = [...txs].reverse().filter(t => dentroDeVentana(t.date));
+    if (!lista.length) return '<tr><td colspan="3" style="text-align:center;color:#888;padding:12px;">Sin movimientos en los últimos 3 meses.</td></tr>';
+    return lista.map(tx => `
+      <tr>
+        <td>${tx.date}</td>
+        <td>${tx.desc}</td>
+        <td style="text-align:right;font-weight:600;color:${tx.type === 'credit' ? '#2e7d32' : '#c62828'};">
+          ${tx.type === 'credit' ? '+' : '−'} ${fmtFn(tx.amount)}
+        </td>
+      </tr>`).join('');
+  }
+
+  const u = currentUser;
+  const fechaEmision = todayStr();
+
+  // Datos de cuenta
+  const nroCC  = u.accountNum        || '—';
+  const nroCA  = u.accountNumCajaAhorro || null;
+  const nroUSD = u.accountNumUSD     || null;
+
+  // SVG del logo (versión monocromática sobre fondo rojo)
+  const logoSVG = `<svg width="36" height="36" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="15" cy="15" r="15" fill="#db0011"/>
+    <rect x="6" y="13"   width="18" height="3.5" rx="1.75" fill="white"/>
+    <rect x="6" y="8.5"  width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.55)"/>
+    <rect x="6" y="17.5" width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.55)"/>
+    <rect x="6" y="4"    width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.25)"/>
+    <rect x="6" y="22"   width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.25)"/>
+  </svg>`;
+
+  const cuentasHTML = `
+    <div style="font-size:12px;color:#444;line-height:1.8;">
+      <span><strong>Cta. Cte.:</strong> ${nroCC}</span>
+      ${nroCA  ? `&nbsp;&nbsp;|&nbsp;&nbsp;<span><strong>Caja Ahorro ARS:</strong> ${nroCA}</span>` : ''}
+      ${nroUSD ? `&nbsp;&nbsp;|&nbsp;&nbsp;<span><strong>Caja Ahorro USD:</strong> ${nroUSD}</span>` : ''}
+    </div>`;
+
+  const tablaEstilo = `
+    width:100%;border-collapse:collapse;font-size:12px;margin-bottom:24px;
+  `;
+  const thEstilo = `
+    background:#1a1a1a;color:#fff;padding:8px 12px;text-align:left;font-size:11px;letter-spacing:.8px;
+  `;
+  const tdEstilo = `padding:8px 12px;border-bottom:1px solid #e8e8e8;color:#1a1a1a;`;
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Historial – Banco Blanco</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:Arial,sans-serif;background:#fff;color:#1a1a1a;padding:32px;}
+    h2{font-size:13px;font-weight:700;letter-spacing:1.5px;color:#888;margin:24px 0 10px;}
+    table{${tablaEstilo}}
+    th{${thEstilo}}
+    td{${tdEstilo}}
+    tr:last-child td{border-bottom:none;}
+    tr:hover td{background:#f9f9f9;}
+    .footer{font-size:10px;color:#aaa;text-align:center;margin-top:32px;border-top:1px solid #e8e8e8;padding-top:16px;}
+    @media print{
+      body{padding:20px;}
+      button{display:none;}
+    }
+  </style>
+</head>
+<body>
+  <!-- ENCABEZADO -->
+  <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #db0011;padding-bottom:20px;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;gap:14px;">
+      ${logoSVG}
+      <div>
+        <div style="font-size:22px;font-weight:900;color:#1a1a1a;line-height:1;">Banco Blanco</div>
+        <div style="font-size:10px;color:#888;letter-spacing:3px;margin-top:3px;">BANCA PRIVADA</div>
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:13px;font-weight:700;color:#1a1a1a;">Extracto de cuenta</div>
+      <div style="font-size:11px;color:#888;margin-top:3px;">Últimos 3 meses</div>
+    </div>
+  </div>
+
+  <!-- DATOS DEL TITULAR -->
+  <div style="background:#f5f5f5;border-radius:8px;padding:14px 18px;margin-bottom:24px;">
+    <div style="font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:6px;">${u.name}</div>
+    ${cuentasHTML}
+    <div style="font-size:11px;color:#888;margin-top:6px;">Fecha de emisión: ${fechaEmision}</div>
+  </div>
+
+  <!-- CUENTA CORRIENTE ARS -->
+  <h2>MOVIMIENTOS CUENTA CORRIENTE ARS</h2>
+  <table>
+    <thead><tr><th style="${thEstilo}">FECHA</th><th style="${thEstilo}">DESCRIPCIÓN</th><th style="${thEstilo}text-align:right;">IMPORTE</th></tr></thead>
+    <tbody>${filasTx(u.transactions || [], fmtARS)}</tbody>
+  </table>
+
+  <!-- CAJA DE AHORRO ARS -->
+  <h2>MOVIMIENTOS CAJA DE AHORRO ARS</h2>
+  <table>
+    <thead><tr><th style="${thEstilo}">FECHA</th><th style="${thEstilo}">DESCRIPCIÓN</th><th style="${thEstilo}text-align:right;">IMPORTE</th></tr></thead>
+    <tbody>${filasTx(u.txCajaAhorro || [], fmtARS)}</tbody>
+  </table>
+
+  <!-- MOVIMIENTOS USD -->
+  <h2>MOVIMIENTOS USD</h2>
+  <table>
+    <thead><tr><th style="${thEstilo}">FECHA</th><th style="${thEstilo}">DESCRIPCIÓN</th><th style="${thEstilo}text-align:right;">IMPORTE</th></tr></thead>
+    <tbody>${filasTx(u.txUSD || [], fmtUSD)}</tbody>
+  </table>
+
+  <div class="footer">Banco Blanco — Documento generado el ${fechaEmision} · Solo para uso informativo · No es un comprobante oficial</div>
+</body>
+</html>`;
+
+  const ventana = window.open('', '_blank', 'width=860,height=700');
+  ventana.document.write(html);
+  ventana.document.close();
+  ventana.focus();
+  // Pequeño delay para que el SVG termine de renderizar antes del diálogo de impresión
+  setTimeout(() => ventana.print(), 400);
+}
+
 // ─── CIERRE DE MODALES ────────────────────────────────────────────
 document.querySelectorAll('.modal-overlay').forEach(m => {
   m.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
