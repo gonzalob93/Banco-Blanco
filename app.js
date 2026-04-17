@@ -373,15 +373,16 @@ async function procesarVencimientos() {
  
 // ─── DASHBOARD ────────────────────────────────────────────────────
 function userTab(tab) {
-  const TABS = ['home','divisas','prestamos','plazos','inversiones','historial','cheques'];
-  document.querySelectorAll('.user-nav-tab').forEach((t,i) => t.classList.toggle('active', TABS[i] === tab));
-  TABS.forEach(t => document.getElementById('utab-' + t).style.display = t === tab ? '' : 'none');
-  if (tab === 'divisas')    renderDivisasTab();
-  if (tab === 'prestamos')  renderPrestamosUser();
-  if (tab === 'plazos')     renderPlazosUser();
+  document.querySelectorAll('.user-nav-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  ['home','divisas','prestamos','plazos','inversiones','historial','cheques'].forEach(t => {
+    document.getElementById('utab-' + t).style.display = t === tab ? '' : 'none';
+  });
+  if (tab === 'divisas')     renderDivisasTab();
+  if (tab === 'prestamos')   renderPrestamosUser();
+  if (tab === 'plazos')      renderPlazosUser();
   if (tab === 'inversiones') renderInversiones();
-  if (tab === 'historial')  renderHistorial();
-  if (tab === 'cheques')    renderChequesUser();
+  if (tab === 'historial')   renderHistorial();
+  if (tab === 'cheques')     renderChequesUser();
 }
  
 
