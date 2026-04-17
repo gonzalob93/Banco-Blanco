@@ -65,8 +65,17 @@ function showScreen(id) {
 function openModal(id) {
   document.querySelectorAll('.error-msg').forEach(e => e.classList.remove('show'));
   document.getElementById('modal-' + id).classList.add('open');
-  // Mostrar/ocultar selectores de cuenta según si el usuario tiene CA
   if (typeof actualizarSelectoresCuenta === 'function') actualizarSelectoresCuenta();
+  // Poblar lista de países en el modal de transferencia exterior
+  if (id === 'new-transf-ext') {
+    const sel = document.getElementById('txe-pais');
+    if (sel && sel.options.length <= 1) {
+      PAISES.forEach(p => { const o = document.createElement('option'); o.value = p; o.textContent = p; sel.appendChild(o); });
+    }
+    // Ocultar opción USD si el usuario no tiene cuenta USD
+    const optUSD = document.querySelector('#txe-cuenta option[value="usd"]');
+    if (optUSD) optUSD.disabled = !currentUser.accountNumUSD;
+  }
 }
 function closeModal(id) {
   document.getElementById('modal-' + id).classList.remove('open');
@@ -374,15 +383,16 @@ async function procesarVencimientos() {
 // ─── DASHBOARD ────────────────────────────────────────────────────
 function userTab(tab) {
   document.querySelectorAll('.user-nav-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  ['home','divisas','prestamos','plazos','inversiones','historial','cheques'].forEach(t => {
+  ['home','divisas','prestamos','plazos','inversiones','historial','cheques','transferencias-ext'].forEach(t => {
     document.getElementById('utab-' + t).style.display = t === tab ? '' : 'none';
   });
-  if (tab === 'divisas')     renderDivisasTab();
-  if (tab === 'prestamos')   renderPrestamosUser();
-  if (tab === 'plazos')      renderPlazosUser();
-  if (tab === 'inversiones') renderInversiones();
-  if (tab === 'historial')   renderHistorial();
-  if (tab === 'cheques')     renderChequesUser();
+  if (tab === 'divisas')            renderDivisasTab();
+  if (tab === 'prestamos')          renderPrestamosUser();
+  if (tab === 'plazos')             renderPlazosUser();
+  if (tab === 'inversiones')        renderInversiones();
+  if (tab === 'historial')          renderHistorial();
+  if (tab === 'cheques')            renderChequesUser();
+  if (tab === 'transferencias-ext') renderTransferenciasExt();
 }
  
 
@@ -1963,6 +1973,147 @@ async function depositarCheque(nro) {
 
     showNotif('✕ Cheque Nº ' + nro + ' rechazado — fondos insuficientes del emisor', 'error');
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MÓDULO TRANSFERENCIAS AL EXTERIOR
+// ════════════════════════════════════════════════════════════════
+
+const PAISES = [
+  'Alemania','Argentina','Australia','Austria','Bélgica','Bolivia','Brasil','Canadá',
+  'Chile','China','Colombia','Corea del Sur','Dinamarca','Ecuador','España','Estados Unidos',
+  'Francia','Grecia','Hong Kong','India','Irlanda','Israel','Italia','Japón','México',
+  'Noruega','Nueva Zelanda','Países Bajos','Panamá','Paraguay','Perú','Polonia',
+  'Portugal','Reino Unido','Singapur','Sudáfrica','Suecia','Suiza','Uruguay','Venezuela',
+];
+
+function renderTransferenciasExt() {
+  const el  = document.getElementById('tx-ext-list');
+  const txs = (currentUser.transferenciasExt || []).slice().reverse();
+  if (!txs.length) {
+    el.innerHTML = '<div class="empty-state">No realizaste transferencias al exterior.</div>';
+    return;
+  }
+  el.innerHTML = txs.map(t => `
+    <div class="producto-item" style="flex-direction:column;align-items:flex-start;gap:4px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+        <div class="prod-title">${fmtUSD(t.importeUSD)} → ${t.beneficiario}</div>
+        <span class="producto-badge badge-plazo">✓ Enviada</span>
+      </div>
+      <div class="prod-detail">País: ${t.pais} · Cta: ${t.numeroCuenta}</div>
+      <div class="prod-detail">
+        Banco benef.: ${t.tipoCodBenef.toUpperCase()} ${t.codBenef}
+        · Banco corresp.: ${t.tipoCodCorresp.toUpperCase()} ${t.codCorresp}
+      </div>
+      <div class="prod-detail">Debitado: ${fmtUSD(t.importeUSD)} ${t.cuentaOrigen === 'usd' ? 'desde Caja Ahorro USD' : t.cuentaOrigen === 'ca' ? '(equiv. ' + fmtARS(t.importeARS) + ' desde Caja Ahorro ARS · TC ' + fmtTC(t.tc) + ')' : '(equiv. ' + fmtARS(t.importeARS) + ' desde Cta. Cte. · TC ' + fmtTC(t.tc) + ')'} · ${t.fecha}</div>
+    </div>`).join('');
+}
+
+// Actualiza el label de simulación en tiempo real
+function simTransfExt() {
+  const usd    = parseFloat(document.getElementById('txe-importe').value);
+  const origen = document.getElementById('txe-cuenta').value;
+  const sim    = document.getElementById('txe-sim');
+  if (!usd || usd <= 0) { sim.style.display = 'none'; return; }
+  sim.style.display = '';
+  if (origen === 'usd') {
+    document.getElementById('txe-sim-debito').textContent = fmtUSD(usd) + ' desde Caja Ahorro USD';
+    document.getElementById('txe-sim-tc').style.display   = 'none';
+    document.getElementById('txe-sim-tc-row').style.display = 'none';
+  } else {
+    const ars = usd * localConfig.tcVenta;
+    document.getElementById('txe-sim-debito').textContent = fmtARS(ars) + (origen === 'ca' ? ' desde Caja Ahorro ARS' : ' desde Cta. Cte.');
+    document.getElementById('txe-sim-tc-row').style.display = '';
+    document.getElementById('txe-sim-tc').textContent = fmtTC(localConfig.tcVenta) + ' / USD';
+  }
+}
+
+async function doTransferenciaExt() {
+  const beneficiario   = document.getElementById('txe-beneficiario').value.trim();
+  const pais           = document.getElementById('txe-pais').value;
+  const tipoCodBenef   = document.getElementById('txe-tipo-benef').value;
+  const codBenef       = document.getElementById('txe-cod-benef').value.trim().toUpperCase();
+  const tipoCodCorresp = document.getElementById('txe-tipo-corresp').value;
+  const codCorresp     = document.getElementById('txe-cod-corresp').value.trim().toUpperCase();
+  const numeroCuenta   = document.getElementById('txe-cuenta-num').value.trim();
+  const usd            = parseFloat(document.getElementById('txe-importe').value);
+  const origen         = document.getElementById('txe-cuenta').value;
+  const err            = document.getElementById('txe-error'); err.classList.remove('show');
+
+  // Validaciones
+  if (!beneficiario)  { err.textContent = 'Ingresá el nombre del beneficiario.';          err.classList.add('show'); return; }
+  if (!pais)          { err.textContent = 'Seleccioná el país de destino.';               err.classList.add('show'); return; }
+  if (!codBenef)      { err.textContent = 'Ingresá el código del banco beneficiario.';    err.classList.add('show'); return; }
+  if (!codCorresp)    { err.textContent = 'Ingresá el código del banco corresponsal.';    err.classList.add('show'); return; }
+  if (!numeroCuenta)  { err.textContent = 'Ingresá el número de cuenta del beneficiario.'; err.classList.add('show'); return; }
+  if (!usd || usd <= 0) { err.textContent = 'Ingresá un importe válido.';                err.classList.add('show'); return; }
+
+  // Validar SWIFT (8 u 11 caracteres alfanuméricos) o ABA (9 dígitos)
+  const swiftRegex = /^[A-Z0-9]{8,11}$/;
+  const abaRegex   = /^\d{9}$/;
+  if (tipoCodBenef === 'swift'   && !swiftRegex.test(codBenef))   { err.textContent = 'El SWIFT del banco beneficiario debe tener 8 u 11 caracteres alfanuméricos.';   err.classList.add('show'); return; }
+  if (tipoCodBenef === 'aba'     && !abaRegex.test(codBenef))     { err.textContent = 'El ABA del banco beneficiario debe tener exactamente 9 dígitos.';                err.classList.add('show'); return; }
+  if (tipoCodCorresp === 'swift' && !swiftRegex.test(codCorresp)) { err.textContent = 'El SWIFT del banco corresponsal debe tener 8 u 11 caracteres alfanuméricos.';  err.classList.add('show'); return; }
+  if (tipoCodCorresp === 'aba'   && !abaRegex.test(codCorresp))   { err.textContent = 'El ABA del banco corresponsal debe tener exactamente 9 dígitos.';               err.classList.add('show'); return; }
+
+  setLoading('btn-txe-confirmar', true);
+  try {
+    const txId = (currentUser.txCounter || 200) + 1;
+    const d    = todayStr();
+    const upd  = { txCounter: txId };
+    let importeARS = 0;
+
+    if (origen === 'usd') {
+      // Debitar USD directo
+      const balUSD = currentUser.balanceUSD || 0;
+      if (usd > balUSD) { err.textContent = 'Saldo USD insuficiente. Disponible: ' + fmtUSD(balUSD) + '.'; err.classList.add('show'); setLoading('btn-txe-confirmar', false); return; }
+      upd.balanceUSD = parseFloat((balUSD - usd).toFixed(8));
+      upd.txUSD = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia al exterior – ' + beneficiario + ' (' + pais + ')', amount: usd, date: d });
+    } else {
+      // Convertir USD → ARS al TC Vendedor y debitar cuenta ARS
+      importeARS = parseFloat((usd * localConfig.tcVenta).toFixed(2));
+      if (origen === 'ca') {
+        const balCA = currentUser.balanceCajaAhorro || 0;
+        if (importeARS > balCA) { err.textContent = 'Saldo insuficiente en Caja de Ahorro ARS. Necesitás ' + fmtARS(importeARS) + ' (equiv. al TC Vendedor ' + fmtTC(localConfig.tcVenta) + ').'; err.classList.add('show'); setLoading('btn-txe-confirmar', false); return; }
+        upd.balanceCajaAhorro = parseFloat((balCA - importeARS).toFixed(2));
+        upd.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia al exterior – ' + beneficiario + ' (' + pais + ') · ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: importeARS, date: d });
+      } else {
+        // Cuenta corriente — respeta descubierto
+        const balCC = currentUser.balance || 0;
+        const lim   = (currentUser.limiteDescubierto != null) ? currentUser.limiteDescubierto : 50000;
+        if (importeARS > balCC + lim) { err.textContent = 'Superás el límite disponible en Cta. Cte. Disponible: ' + fmtARS(Math.max(0, balCC + lim)) + '.'; err.classList.add('show'); setLoading('btn-txe-confirmar', false); return; }
+        const nuevoBalCC = parseFloat((balCC - importeARS).toFixed(2));
+        upd.balance = nuevoBalCC;
+        upd.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia al exterior – ' + beneficiario + ' (' + pais + ') · ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: importeARS, date: d });
+        if (nuevoBalCC < 0 && !(currentUser.descubierto && currentUser.descubierto.fechaInicio)) upd.descubierto = { fechaInicio: d };
+        if (nuevoBalCC >= 0) upd.descubierto = null;
+      }
+    }
+
+    // Registrar la transferencia en el historial propio
+    const registro = {
+      id: txId, fecha: d, beneficiario, pais,
+      tipoCodBenef, codBenef, tipoCodCorresp, codCorresp,
+      numeroCuenta, importeUSD: usd, importeARS, tc: localConfig.tcVenta,
+      cuentaOrigen: origen,
+    };
+    upd.transferenciasExt = firebase.firestore.FieldValue.arrayUnion(registro);
+
+    await db.collection('users').doc(currentUser.id).update(upd);
+
+    closeModal('new-transf-ext');
+    // Limpiar formulario
+    ['txe-beneficiario','txe-cod-benef','txe-cod-corresp','txe-cuenta-num','txe-importe'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('txe-pais').selectedIndex = 0;
+    document.getElementById('txe-sim').style.display = 'none';
+
+    showNotif('✓ Transferencia al exterior enviada — ' + fmtUSD(usd) + ' a ' + beneficiario, 'info');
+  } catch(e) {
+    err.textContent = 'Error al procesar la transferencia. Intentá de nuevo.';
+    err.classList.add('show');
+    console.error(e);
+  }
+  setLoading('btn-txe-confirmar', false);
 }
 
 // ─── CIERRE DE MODALES ────────────────────────────────────────────
