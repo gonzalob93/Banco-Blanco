@@ -94,7 +94,7 @@ async function ensureConfig() {
   const ref = db.collection('config').doc('global');
   const snap = await ref.get();
   if (!snap.exists) {
-    const defaults = { tasaPF: 10, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tasaCA: 4, tcCompra: 1370, tcVenta: 1400, topeDeposito: 1000000, saldoMaxARS: 50000000 };
+    const defaults = { tasaPF: 10, tasaPFUSD: 2, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tasaCA: 4, tcCompra: 1370, tcVenta: 1400, topeDeposito: 1000000, saldoMaxARS: 50000000 };
     await ref.set(defaults);
     localConfig = defaults;
   } else {
@@ -240,13 +240,16 @@ async function procesarVencimientos() {
   let changed = false;
   const txs = [...(data.transactions || [])];
   const txsCA = [...(data.txCajaAhorro || [])];
+  const txsUSD = [...(data.txUSD || [])];
   const plazos = [...(data.plazos || [])];
+  const plazosUSD = [...(data.plazosUSD || [])];
   const prestamos = [...(data.prestamos || [])];
   let balance = data.balance;
   let balanceCA = data.balanceCajaAhorro || 0;
+  let balanceUSD = data.balanceUSD || 0;
   let txCounter = data.txCounter || 200;
- 
-  // Plazos fijos vencidos — acreditar en la cuenta de origen
+
+  // Plazos fijos ARS vencidos — acreditar en la cuenta de origen
   plazos.forEach(pf => {
     if (!pf.acreditado && dateFromStr(pf.fechaVenc) <= now) {
       const total = pf.capital + pf.interes;
@@ -261,6 +264,19 @@ async function procesarVencimientos() {
       }
     }
   });
+
+  // Plazos fijos USD vencidos — acreditar en Caja de Ahorro USD
+  if (data.accountNumUSD) {
+    plazosUSD.forEach(pf => {
+      if (!pf.acreditado && dateFromStr(pf.fechaVenc) <= now) {
+        const total = pf.capital + pf.interes;
+        pf.acreditado = true;
+        changed = true;
+        balanceUSD += total;
+        txsUSD.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo USD – capital + interés (' + pf.tna + '% TNA)', amount: total, date: todayStr() });
+      }
+    });
+  }
 
   // Cuotas de préstamos vencidas — debitar de la cuenta de origen
   prestamos.forEach(pr => {
@@ -331,6 +347,11 @@ async function procesarVencimientos() {
         upd.interesesCAacumulados = 0;
         upd.ultimaAcreditacionCA = mesActual;
       }
+    }
+    if (data.accountNumUSD) {
+      upd.balanceUSD = balanceUSD;
+      upd.txUSD = txsUSD;
+      upd.plazosUSD = plazosUSD;
     }
     await db.collection('users').doc(currentUser.id).update(upd);
   }
@@ -794,7 +815,7 @@ function renderPrestamosUser() {
   }).join('');
 }
  
-// ─── PLAZOS FIJOS ─────────────────────────────────────────────────
+// ─── PLAZOS FIJOS ARS ─────────────────────────────────────────────
 function simPlazo() {
   const M = parseFloat(document.getElementById('pf-monto').value);
   const n = parseInt(document.getElementById('pf-plazo').value);
@@ -839,17 +860,80 @@ async function doConstitutirPlazo() {
 }
  
 function renderPlazosUser() {
-  const el = document.getElementById('plazos-list');
+  // ── Listado ARS ──
+  const elARS = document.getElementById('plazos-list-ars');
   const pfs = currentUser.plazos || [];
-  if (!pfs.length) { el.innerHTML = '<div class="empty-state">No tenés plazos fijos.</div>'; return; }
-  el.innerHTML = pfs.map(pf => {
-    const badge = pf.acreditado ? '<span class="producto-badge badge-plazo">✓ Acreditado</span>' : '<span class="producto-badge badge-prestamo">En curso</span>';
-    return `<div class="producto-item"><div class="prod-info">
-      <div class="prod-title">Plazo Fijo ${fmtARS(pf.capital)} – ${pf.meses} meses ${badge}</div>
-      <div class="prod-detail">Tasa: ${pf.tna}% TNA · Interés: ${fmtARS(pf.interes)} · Total: ${fmtARS(pf.capital + pf.interes)}</div>
-      <div class="prod-detail">Inicio: ${pf.fechaInicio} · Vencimiento: ${pf.fechaVenc}</div>
-    </div></div>`;
-  }).join('');
+  if (!pfs.length) {
+    elARS.innerHTML = '<div class="empty-state">No tenés plazos fijos en ARS.</div>';
+  } else {
+    elARS.innerHTML = pfs.map(pf => {
+      const badge = pf.acreditado ? '<span class="producto-badge badge-plazo">✓ Acreditado</span>' : '<span class="producto-badge badge-prestamo">En curso</span>';
+      return `<div class="producto-item"><div class="prod-info">
+        <div class="prod-title">Plazo Fijo ${fmtARS(pf.capital)} – ${pf.meses} meses ${badge}</div>
+        <div class="prod-detail">Tasa: ${pf.tna}% TNA · Interés: ${fmtARS(pf.interes)} · Total: ${fmtARS(pf.capital + pf.interes)}</div>
+        <div class="prod-detail">Inicio: ${pf.fechaInicio} · Vencimiento: ${pf.fechaVenc}</div>
+      </div></div>`;
+    }).join('');
+  }
+  // ── Listado USD ──
+  const elUSD = document.getElementById('plazos-list-usd');
+  const pfsUSD = currentUser.plazosUSD || [];
+  if (!currentUser.accountNumUSD) {
+    elUSD.innerHTML = '<div class="empty-state">Necesitás cuenta en USD para constituir plazos fijos en dólares.</div>';
+  } else if (!pfsUSD.length) {
+    elUSD.innerHTML = '<div class="empty-state">No tenés plazos fijos en USD.</div>';
+  } else {
+    elUSD.innerHTML = pfsUSD.map(pf => {
+      const badge = pf.acreditado ? '<span class="producto-badge badge-plazo">✓ Acreditado</span>' : '<span class="producto-badge badge-prestamo">En curso</span>';
+      return `<div class="producto-item"><div class="prod-info">
+        <div class="prod-title">Plazo Fijo ${fmtUSD(pf.capital)} – ${pf.meses} meses ${badge}</div>
+        <div class="prod-detail">Tasa: ${pf.tna}% TNA · Interés: ${fmtUSD(pf.interes)} · Total: ${fmtUSD(pf.capital + pf.interes)}</div>
+        <div class="prod-detail">Inicio: ${pf.fechaInicio} · Vencimiento: ${pf.fechaVenc}</div>
+      </div></div>`;
+    }).join('');
+  }
+}
+
+// ─── PLAZOS FIJOS USD ─────────────────────────────────────────────
+function simPlazoUSD() {
+  const M = parseFloat(document.getElementById('pf-usd-monto').value);
+  const n = parseInt(document.getElementById('pf-usd-plazo').value);
+  const sim = document.getElementById('pf-usd-sim');
+  if (!M || !n || M <= 0 || n < 1 || n > 12) { sim.style.display = 'none'; return; }
+  const tna = localConfig.tasaPFUSD || 2;
+  const interes = M * (tna / 100) * (n / 12);
+  sim.style.display = '';
+  document.getElementById('pf-usd-sim-tna').textContent = tna + '% TNA';
+  document.getElementById('pf-usd-sim-interes').textContent = fmtUSD(interes);
+  document.getElementById('pf-usd-sim-total').textContent = fmtUSD(M + interes);
+  document.getElementById('pf-usd-sim-fecha').textContent = fmtDate(addMonths(today(), n));
+}
+
+async function doConstituirPlazoUSD() {
+  const M = parseFloat(document.getElementById('pf-usd-monto').value);
+  const n = parseInt(document.getElementById('pf-usd-plazo').value);
+  const err = document.getElementById('pf-usd-error'); err.classList.remove('show');
+  if (!currentUser.accountNumUSD) { err.textContent = 'Necesitás cuenta en USD para esta operación.'; err.classList.add('show'); return; }
+  if (!M || M <= 0) { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
+  if (!n || n < 1 || n > 12) { err.textContent = 'El plazo debe ser entre 1 y 12 meses.'; err.classList.add('show'); return; }
+  const balUSD = currentUser.balanceUSD || 0;
+  if (M > balUSD) { err.textContent = 'Saldo USD insuficiente. Disponible: ' + fmtUSD(balUSD) + '.'; err.classList.add('show'); return; }
+  const tna = localConfig.tasaPFUSD || 2;
+  const interes = M * (tna / 100) * (n / 12);
+  const txId = (currentUser.txCounter || 200) + 1;
+  const d = todayStr();
+  const nuevoPlazoUSD = { id: txId, capital: M, meses: n, tna, interes, fechaInicio: d, fechaVenc: fmtDate(addMonths(today(), n)), acreditado: false };
+  await db.collection('users').doc(currentUser.id).update({
+    balanceUSD: parseFloat((balUSD - M).toFixed(8)),
+    txCounter: txId,
+    plazosUSD: firebase.firestore.FieldValue.arrayUnion(nuevoPlazoUSD),
+    txUSD: firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Constitución plazo fijo USD – ' + n + ' meses al ' + tna + '% TNA', amount: M, date: d }),
+  });
+  closeModal('new-plazo-usd');
+  document.getElementById('pf-usd-monto').value = '';
+  document.getElementById('pf-usd-plazo').value = '';
+  document.getElementById('pf-usd-sim').style.display = 'none';
+  showNotif('✓ Plazo fijo de ' + fmtUSD(M) + ' constituido por ' + n + ' meses', 'info');
 }
  
 // ─── ADMIN ────────────────────────────────────────────────────────
@@ -1020,6 +1104,15 @@ function renderAdminProductos() {
         <td>${fmtARS(pf.interes)}</td><td>${pf.fechaVenc}</td>
       </tr>`).join('')
     : '<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--text3)">No hay plazos fijos activos</td></tr>';
+
+  const pfsUSD = [];
+  allUsers.forEach(u => (u.plazosUSD || []).filter(p => !p.acreditado).forEach(p => pfsUSD.push({ user: u, pf: p })));
+  document.getElementById('admin-plazos-usd-body').innerHTML = pfsUSD.length
+    ? pfsUSD.map(({ user, pf }) => `<tr>
+        <td>${user.name}</td><td>${fmtUSD(pf.capital)}</td><td>${pf.tna}% TNA</td>
+        <td>${fmtUSD(pf.interes)}</td><td>${pf.fechaVenc}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--text3)">No hay plazos fijos USD activos</td></tr>';
 }
  
 function renderAdminDivisas() {
@@ -1052,6 +1145,7 @@ function renderAdminTx() {
  
 function loadConfigUI() {
   document.getElementById('cfg-tasa-pf').value = localConfig.tasaPF;
+  document.getElementById('cfg-tasa-pf-usd').value = localConfig.tasaPFUSD || 2;
   document.getElementById('cfg-tasa-pr').value = localConfig.tasaPR;
   document.getElementById('cfg-tasa-mora').value = localConfig.tasaMora;
   document.getElementById('cfg-tasa-desc').value = localConfig.tasaDescubierto || 50;
@@ -1063,7 +1157,8 @@ function loadConfigUI() {
 }
  
 async function saveConfig() {
-  const pf   = parseFloat(document.getElementById('cfg-tasa-pf').value);
+  const pf    = parseFloat(document.getElementById('cfg-tasa-pf').value);
+  const pfusd = parseFloat(document.getElementById('cfg-tasa-pf-usd').value);
   const pr   = parseFloat(document.getElementById('cfg-tasa-pr').value);
   const mora = parseFloat(document.getElementById('cfg-tasa-mora').value);
   const desc = parseFloat(document.getElementById('cfg-tasa-desc').value);
@@ -1072,10 +1167,10 @@ async function saveConfig() {
   const tcv     = parseFloat(document.getElementById('cfg-tc-venta').value);
   const topeDep = parseFloat(document.getElementById('cfg-tope-dep').value);
   const saldoMax = parseFloat(document.getElementById('cfg-saldo-max').value);
-  if ([pf, pr, mora, desc, ca, tcc, tcv, topeDep, saldoMax].some(v => isNaN(v) || v < 0)) { showNotif('Verificá que todos los valores sean válidos.', 'error'); return; }
+  if ([pf, pfusd, pr, mora, desc, ca, tcc, tcv, topeDep, saldoMax].some(v => isNaN(v) || v < 0)) { showNotif('Verificá que todos los valores sean válidos.', 'error'); return; }
   if (tcc >= tcv) { showNotif('El TC comprador debe ser menor al TC vendedor.', 'error'); return; }
   if (topeDep > saldoMax) { showNotif('El tope por depósito no puede superar el saldo máximo.', 'error'); return; }
-  const newConfig = { tasaPF: pf, tasaPR: pr, tasaMora: mora, tasaDescubierto: desc, tasaCA: ca, tcCompra: tcc, tcVenta: tcv, topeDeposito: topeDep, saldoMaxARS: saldoMax };
+  const newConfig = { tasaPF: pf, tasaPFUSD: pfusd, tasaPR: pr, tasaMora: mora, tasaDescubierto: desc, tasaCA: ca, tcCompra: tcc, tcVenta: tcv, topeDeposito: topeDep, saldoMaxARS: saldoMax };
   await db.collection('config').doc('global').set(newConfig);
   localConfig = newConfig;
   updateFXLabels();
