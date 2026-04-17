@@ -2044,17 +2044,16 @@ async function doTransferenciaExt() {
   if (!beneficiario)  { err.textContent = 'Ingresá el nombre del beneficiario.';          err.classList.add('show'); return; }
   if (!pais)          { err.textContent = 'Seleccioná el país de destino.';               err.classList.add('show'); return; }
   if (!codBenef)      { err.textContent = 'Ingresá el código del banco beneficiario.';    err.classList.add('show'); return; }
-  if (!codCorresp)    { err.textContent = 'Ingresá el código del banco corresponsal.';    err.classList.add('show'); return; }
   if (!numeroCuenta)  { err.textContent = 'Ingresá el número de cuenta del beneficiario.'; err.classList.add('show'); return; }
   if (!usd || usd <= 0) { err.textContent = 'Ingresá un importe válido.';                err.classList.add('show'); return; }
 
   // Validar SWIFT (8 u 11 caracteres alfanuméricos) o ABA (9 dígitos)
   const swiftRegex = /^[A-Z0-9]{8,11}$/;
   const abaRegex   = /^\d{9}$/;
-  if (tipoCodBenef === 'swift'   && !swiftRegex.test(codBenef))   { err.textContent = 'El SWIFT del banco beneficiario debe tener 8 u 11 caracteres alfanuméricos.';   err.classList.add('show'); return; }
-  if (tipoCodBenef === 'aba'     && !abaRegex.test(codBenef))     { err.textContent = 'El ABA del banco beneficiario debe tener exactamente 9 dígitos.';                err.classList.add('show'); return; }
-  if (tipoCodCorresp === 'swift' && !swiftRegex.test(codCorresp)) { err.textContent = 'El SWIFT del banco corresponsal debe tener 8 u 11 caracteres alfanuméricos.';  err.classList.add('show'); return; }
-  if (tipoCodCorresp === 'aba'   && !abaRegex.test(codCorresp))   { err.textContent = 'El ABA del banco corresponsal debe tener exactamente 9 dígitos.';               err.classList.add('show'); return; }
+  if (tipoCodBenef === 'swift'   && !swiftRegex.test(codBenef))                        { err.textContent = 'El SWIFT del banco beneficiario debe tener 8 u 11 caracteres alfanuméricos.';   err.classList.add('show'); return; }
+  if (tipoCodBenef === 'aba'     && !abaRegex.test(codBenef))                          { err.textContent = 'El ABA del banco beneficiario debe tener exactamente 9 dígitos.';                err.classList.add('show'); return; }
+  if (codCorresp && tipoCodCorresp === 'swift' && !swiftRegex.test(codCorresp))        { err.textContent = 'El SWIFT del banco corresponsal debe tener 8 u 11 caracteres alfanuméricos.';  err.classList.add('show'); return; }
+  if (codCorresp && tipoCodCorresp === 'aba'   && !abaRegex.test(codCorresp))          { err.textContent = 'El ABA del banco corresponsal debe tener exactamente 9 dígitos.';               err.classList.add('show'); return; }
 
   setLoading('btn-txe-confirmar', true);
   try {
