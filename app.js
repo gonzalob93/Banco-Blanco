@@ -1072,7 +1072,7 @@ function adminTab(tab) {
   if (tab === 'productos')   renderAdminProductos();
   if (tab === 'divisas')     renderAdminDivisas();
   if (tab === 'transactions') renderAdminTx();
-  if (tab === 'cheques')     renderAdminCheques();
+  if (tab === 'cheques')     { renderAdminCheques(); renderAdminTransfExt(); }
   if (tab === 'config')      loadConfigUI();
   if (tab === 'users')       renderAdmin();
 }
@@ -2536,6 +2536,113 @@ async function adminCobrarChequeDescontado(nro) {
   await renderAdminCheques();
 }
 
+// ── PANEL ADMIN — TRANSFERENCIAS AL EXTERIOR PENDIENTES ──────────
+
+async function renderAdminTransfExt() {
+  const snap = await db.collection('transferenciasExtPendientes').get();
+  const todas = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+  const pendientes = todas.filter(t => t.estado === 'pendiente');
+  const procesadas = todas.filter(t => t.estado !== 'pendiente');
+
+  const bodyPend = document.getElementById('admin-transf-ext-pendientes-body');
+  if (!bodyPend) return;
+  bodyPend.innerHTML = pendientes.length
+    ? pendientes.map(t => `<tr>
+        <td>${t.usuarioNombre} <span style="font-size:11px;color:var(--text3)">(@${t.usuarioId})</span></td>
+        <td><strong>${fmtUSD(t.importeUSD)}</strong></td>
+        <td>${t.cuentaOrigen === 'usd' ? 'Caja USD' : t.cuentaOrigen === 'ca' ? fmtARS(t.importeARS) + ' (CA)' : fmtARS(t.importeARS) + ' (CC)'}</td>
+        <td>${t.beneficiario}</td>
+        <td>${t.pais}</td>
+        <td style="font-size:11px;">${t.tipoCodBenef.toUpperCase()} ${t.codBenef}</td>
+        <td>${t.numeroCuenta}</td>
+        <td>${t.fecha}</td>
+        <td style="display:flex;gap:6px;">
+          <button class="btn-sm btn-add" style="font-size:11px;padding:4px 10px;" onclick="adminAprobarTransfExt('${t.docId}')">Aprobar</button>
+          <button class="btn-sm btn-del" style="font-size:11px;padding:4px 10px;" onclick="adminRechazarTransfExt('${t.docId}')">Rechazar</button>
+        </td>
+      </tr>`).join('')
+    : '<tr><td colspan="9" style="text-align:center;padding:1.5rem;color:var(--text3)">No hay transferencias pendientes</td></tr>';
+
+  const bodyProc = document.getElementById('admin-transf-ext-procesadas-body');
+  if (!bodyProc) return;
+  bodyProc.innerHTML = procesadas.length
+    ? procesadas.slice().reverse().map(t => {
+        const badge = t.estado === 'aprobada'
+          ? '<span class="producto-badge badge-plazo">✓ Aprobada</span>'
+          : '<span class="producto-badge badge-vencido">✕ Rechazada</span>';
+        return `<tr>
+          <td>${t.usuarioNombre}</td>
+          <td>${fmtUSD(t.importeUSD)}</td>
+          <td>${t.beneficiario}</td>
+          <td>${t.pais}</td>
+          <td>${t.fecha}</td>
+          <td>${badge}</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="6" style="text-align:center;padding:1.5rem;color:var(--text3)">Sin historial</td></tr>';
+}
+
+async function adminAprobarTransfExt(docId) {
+  const snap = await db.collection('transferenciasExtPendientes').doc(docId).get();
+  if (!snap.exists) { showNotif('Solicitud no encontrada.', 'error'); return; }
+  const t = snap.data();
+
+  // Actualizar estado en el array transferenciasExt del usuario
+  const userSnap = await db.collection('users').doc(t.usuarioId).get();
+  const user = userSnap.data();
+  const txsActualizadas = (user.transferenciasExt || []).map(tx =>
+    tx.id === t.id ? { ...tx, estado: 'aprobada' } : tx
+  );
+
+  const batch = db.batch();
+  batch.update(db.collection('users').doc(t.usuarioId), { transferenciasExt: txsActualizadas });
+  batch.update(db.collection('transferenciasExtPendientes').doc(docId), { estado: 'aprobada' });
+  await batch.commit();
+
+  showNotif('✓ Transferencia aprobada — ' + fmtUSD(t.importeUSD) + ' a ' + t.beneficiario + ' (' + t.pais + ')');
+  await renderAdminTransfExt();
+}
+
+async function adminRechazarTransfExt(docId) {
+  const snap = await db.collection('transferenciasExtPendientes').doc(docId).get();
+  if (!snap.exists) { showNotif('Solicitud no encontrada.', 'error'); return; }
+  const t = snap.data();
+
+  // Devolver fondos al usuario
+  const userSnap = await db.collection('users').doc(t.usuarioId).get();
+  const user = userSnap.data();
+  const d = todayStr();
+  const txId = Date.now();
+  const updUser = {};
+
+  if (t.cuentaOrigen === 'usd') {
+    updUser.balanceUSD = parseFloat(((user.balanceUSD || 0) + t.importeUSD).toFixed(8));
+    updUser.txUSD = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Devolución – transferencia al exterior rechazada (' + t.beneficiario + ')', amount: t.importeUSD, date: d });
+  } else if (t.cuentaOrigen === 'ca') {
+    updUser.balanceCajaAhorro = parseFloat(((user.balanceCajaAhorro || 0) + t.importeARS).toFixed(2));
+    updUser.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Devolución – transferencia al exterior rechazada (' + t.beneficiario + ')', amount: t.importeARS, date: d });
+  } else {
+    const nuevoBalCC = parseFloat(((user.balance || 0) + t.importeARS).toFixed(2));
+    updUser.balance = nuevoBalCC;
+    updUser.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'credit', desc: 'Devolución – transferencia al exterior rechazada (' + t.beneficiario + ')', amount: t.importeARS, date: d });
+    if (nuevoBalCC >= 0) updUser.descubierto = null;
+  }
+
+  // Marcar como rechazada en el historial del usuario
+  const txsActualizadas = (user.transferenciasExt || []).map(tx =>
+    tx.id === t.id ? { ...tx, estado: 'rechazada' } : tx
+  );
+  updUser.transferenciasExt = txsActualizadas;
+
+  const batch = db.batch();
+  batch.update(db.collection('users').doc(t.usuarioId), updUser);
+  batch.update(db.collection('transferenciasExtPendientes').doc(docId), { estado: 'rechazada' });
+  await batch.commit();
+
+  showNotif('Transferencia rechazada — fondos devueltos a ' + t.usuarioNombre, 'warn');
+  await renderAdminTransfExt();
+}
+
 // ════════════════════════════════════════════════════════════════
 //  MÓDULO TRANSFERENCIAS AL EXTERIOR
 // ════════════════════════════════════════════════════════════════
@@ -2555,19 +2662,32 @@ function renderTransferenciasExt() {
     el.innerHTML = '<div class="empty-state">No realizaste transferencias al exterior.</div>';
     return;
   }
-  el.innerHTML = txs.map(t => `
+  el.innerHTML = txs.map(t => {
+    const estado = t.estado || 'aprobada'; // compatibilidad con registros anteriores
+    const badge =
+      estado === 'pendiente'  ? '<span class="producto-badge" style="background:var(--amber-bg);color:var(--amber);">⏳ Pendiente aprobación</span>' :
+      estado === 'rechazada'  ? '<span class="producto-badge badge-vencido">✕ Rechazada</span>' :
+                                '<span class="producto-badge badge-plazo">✓ Aprobada</span>';
+    return `
     <div class="producto-item" style="flex-direction:column;align-items:flex-start;gap:4px;">
       <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
         <div class="prod-title">${fmtUSD(t.importeUSD)} → ${t.beneficiario}</div>
-        <span class="producto-badge badge-plazo">✓ Enviada</span>
+        ${badge}
       </div>
       <div class="prod-detail">País: ${t.pais} · Cta: ${t.numeroCuenta}</div>
       <div class="prod-detail">
         Banco benef.: ${t.tipoCodBenef.toUpperCase()} ${t.codBenef}
-        · Banco corresp.: ${t.tipoCodCorresp.toUpperCase()} ${t.codCorresp}
+        ${t.codCorresp ? '· Banco corresp.: ' + t.tipoCodCorresp.toUpperCase() + ' ' + t.codCorresp : ''}
       </div>
-      <div class="prod-detail">Debitado: ${fmtUSD(t.importeUSD)} ${t.cuentaOrigen === 'usd' ? 'desde Caja Ahorro USD' : t.cuentaOrigen === 'ca' ? '(equiv. ' + fmtARS(t.importeARS) + ' desde Caja Ahorro ARS · TC ' + fmtTC(t.tc) + ')' : '(equiv. ' + fmtARS(t.importeARS) + ' desde Cta. Cte. · TC ' + fmtTC(t.tc) + ')'} · ${t.fecha}</div>
-    </div>`).join('');
+      <div class="prod-detail">
+        ${t.cuentaOrigen === 'usd' ? 'Debitado: ' + fmtUSD(t.importeUSD) + ' desde Caja Ahorro USD'
+          : t.cuentaOrigen === 'ca' ? 'Debitado: ' + fmtARS(t.importeARS) + ' desde Caja Ahorro ARS · TC ' + fmtTC(t.tc)
+          : 'Debitado: ' + fmtARS(t.importeARS) + ' desde Cta. Cte. · TC ' + fmtTC(t.tc)}
+        · ${t.fecha}
+      </div>
+      ${estado === 'rechazada' ? '<div class="prod-detail" style="color:var(--red);">Los fondos fueron devueltos a tu cuenta.</div>' : ''}
+    </div>`;
+  }).join('');
 }
 
 // Actualiza el label de simulación en tiempo real
@@ -2602,72 +2722,80 @@ async function doTransferenciaExt() {
   const err            = document.getElementById('txe-error'); err.classList.remove('show');
 
   // Validaciones
-  if (!beneficiario)  { err.textContent = 'Ingresá el nombre del beneficiario.';          err.classList.add('show'); return; }
-  if (!pais)          { err.textContent = 'Seleccioná el país de destino.';               err.classList.add('show'); return; }
-  if (!codBenef)      { err.textContent = 'Ingresá el código del banco beneficiario.';    err.classList.add('show'); return; }
-  if (!numeroCuenta)  { err.textContent = 'Ingresá el número de cuenta del beneficiario.'; err.classList.add('show'); return; }
-  if (!usd || usd <= 0) { err.textContent = 'Ingresá un importe válido.';                err.classList.add('show'); return; }
+  if (!beneficiario)    { err.textContent = 'Ingresá el nombre del beneficiario.';           err.classList.add('show'); return; }
+  if (!pais)            { err.textContent = 'Seleccioná el país de destino.';                err.classList.add('show'); return; }
+  if (!codBenef)        { err.textContent = 'Ingresá el código del banco beneficiario.';     err.classList.add('show'); return; }
+  if (!numeroCuenta)    { err.textContent = 'Ingresá el número de cuenta del beneficiario.'; err.classList.add('show'); return; }
+  if (!usd || usd <= 0) { err.textContent = 'Ingresá un importe válido.';                   err.classList.add('show'); return; }
 
-  // Validar SWIFT (8 u 11 caracteres alfanuméricos) o ABA (9 dígitos)
   const swiftRegex = /^[A-Z0-9]{8,11}$/;
   const abaRegex   = /^\d{9}$/;
-  if (tipoCodBenef === 'swift'   && !swiftRegex.test(codBenef))                        { err.textContent = 'El SWIFT del banco beneficiario debe tener 8 u 11 caracteres alfanuméricos.';   err.classList.add('show'); return; }
-  if (tipoCodBenef === 'aba'     && !abaRegex.test(codBenef))                          { err.textContent = 'El ABA del banco beneficiario debe tener exactamente 9 dígitos.';                err.classList.add('show'); return; }
-  if (codCorresp && tipoCodCorresp === 'swift' && !swiftRegex.test(codCorresp))        { err.textContent = 'El SWIFT del banco corresponsal debe tener 8 u 11 caracteres alfanuméricos.';  err.classList.add('show'); return; }
-  if (codCorresp && tipoCodCorresp === 'aba'   && !abaRegex.test(codCorresp))          { err.textContent = 'El ABA del banco corresponsal debe tener exactamente 9 dígitos.';               err.classList.add('show'); return; }
+  if (tipoCodBenef === 'swift'  && !swiftRegex.test(codBenef))                 { err.textContent = 'El SWIFT del banco beneficiario debe tener 8 u 11 caracteres alfanuméricos.';  err.classList.add('show'); return; }
+  if (tipoCodBenef === 'aba'    && !abaRegex.test(codBenef))                   { err.textContent = 'El ABA del banco beneficiario debe tener exactamente 9 dígitos.';               err.classList.add('show'); return; }
+  if (codCorresp && tipoCodCorresp === 'swift' && !swiftRegex.test(codCorresp)){ err.textContent = 'El SWIFT del banco corresponsal debe tener 8 u 11 caracteres alfanuméricos.'; err.classList.add('show'); return; }
+  if (codCorresp && tipoCodCorresp === 'aba'   && !abaRegex.test(codCorresp))  { err.textContent = 'El ABA del banco corresponsal debe tener exactamente 9 dígitos.';              err.classList.add('show'); return; }
 
   setLoading('btn-txe-confirmar', true);
   try {
-    const txId = (currentUser.txCounter || 200) + 1;
-    const d    = todayStr();
-    const upd  = { txCounter: txId };
-    let importeARS = 0;
+    const txId      = (currentUser.txCounter || 200) + 1;
+    const d         = todayStr();
+    const upd       = { txCounter: txId };
+    let importeARS  = 0;
 
+    // ── Reservar fondos (debitar) ─────────────────────────────────
+    // Los fondos se bloquean ahora; si el admin rechaza se devuelven.
     if (origen === 'usd') {
-      // Debitar USD directo
       const balUSD = currentUser.balanceUSD || 0;
       if (usd > balUSD) { err.textContent = 'Saldo USD insuficiente. Disponible: ' + fmtUSD(balUSD) + '.'; err.classList.add('show'); setLoading('btn-txe-confirmar', false); return; }
       upd.balanceUSD = parseFloat((balUSD - usd).toFixed(8));
-      upd.txUSD = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia al exterior – ' + beneficiario + ' (' + pais + ')', amount: usd, date: d });
+      upd.txUSD = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia al exterior (pendiente aprobación) – ' + beneficiario + ' (' + pais + ')', amount: usd, date: d });
     } else {
-      // Convertir USD → ARS al TC Vendedor y debitar cuenta ARS
       importeARS = parseFloat((usd * localConfig.tcVenta).toFixed(2));
       if (origen === 'ca') {
         const balCA = currentUser.balanceCajaAhorro || 0;
-        if (importeARS > balCA) { err.textContent = 'Saldo insuficiente en Caja de Ahorro ARS. Necesitás ' + fmtARS(importeARS) + ' (equiv. al TC Vendedor ' + fmtTC(localConfig.tcVenta) + ').'; err.classList.add('show'); setLoading('btn-txe-confirmar', false); return; }
+        if (importeARS > balCA) { err.textContent = 'Saldo insuficiente en Caja de Ahorro ARS. Necesitás ' + fmtARS(importeARS) + '.'; err.classList.add('show'); setLoading('btn-txe-confirmar', false); return; }
         upd.balanceCajaAhorro = parseFloat((balCA - importeARS).toFixed(2));
-        upd.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia al exterior – ' + beneficiario + ' (' + pais + ') · ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: importeARS, date: d });
+        upd.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia al exterior (pendiente aprobación) – ' + beneficiario + ' (' + pais + ') · ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: importeARS, date: d });
       } else {
-        // Cuenta corriente — respeta descubierto
         const balCC = currentUser.balance || 0;
         const lim   = (currentUser.limiteDescubierto != null) ? currentUser.limiteDescubierto : 50000;
         if (importeARS > balCC + lim) { err.textContent = 'Superás el límite disponible en Cta. Cte. Disponible: ' + fmtARS(Math.max(0, balCC + lim)) + '.'; err.classList.add('show'); setLoading('btn-txe-confirmar', false); return; }
         const nuevoBalCC = parseFloat((balCC - importeARS).toFixed(2));
         upd.balance = nuevoBalCC;
-        upd.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia al exterior – ' + beneficiario + ' (' + pais + ') · ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: importeARS, date: d });
+        upd.transactions = firebase.firestore.FieldValue.arrayUnion({ id: txId, type: 'debit', desc: 'Transferencia al exterior (pendiente aprobación) – ' + beneficiario + ' (' + pais + ') · ' + fmtUSD(usd) + ' al TC ' + fmtTC(localConfig.tcVenta), amount: importeARS, date: d });
         if (nuevoBalCC < 0 && !(currentUser.descubierto && currentUser.descubierto.fechaInicio)) upd.descubierto = { fechaInicio: d };
         if (nuevoBalCC >= 0) upd.descubierto = null;
       }
     }
 
-    // Registrar la transferencia en el historial propio
+    // ── Registrar en historial del usuario como pendiente ─────────
     const registro = {
       id: txId, fecha: d, beneficiario, pais,
       tipoCodBenef, codBenef, tipoCodCorresp, codCorresp,
       numeroCuenta, importeUSD: usd, importeARS, tc: localConfig.tcVenta,
-      cuentaOrigen: origen,
+      cuentaOrigen: origen, estado: 'pendiente',
     };
     upd.transferenciasExt = firebase.firestore.FieldValue.arrayUnion(registro);
 
-    await db.collection('users').doc(currentUser.id).update(upd);
+    // ── Crear solicitud en colección admin ────────────────────────
+    const solicitud = {
+      ...registro,
+      usuarioId: currentUser.id,
+      usuarioNombre: currentUser.name,
+      fechaSolicitud: d,
+    };
+
+    const batch = db.batch();
+    batch.update(db.collection('users').doc(currentUser.id), upd);
+    batch.set(db.collection('transferenciasExtPendientes').doc(String(txId)), solicitud);
+    await batch.commit();
 
     closeModal('new-transf-ext');
-    // Limpiar formulario
     ['txe-beneficiario','txe-cod-benef','txe-cod-corresp','txe-cuenta-num','txe-importe'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('txe-pais').selectedIndex = 0;
     document.getElementById('txe-sim').style.display = 'none';
 
-    showNotif('✓ Transferencia al exterior enviada — ' + fmtUSD(usd) + ' a ' + beneficiario, 'info');
+    showNotif('✓ Solicitud enviada — la transferencia quedará pendiente de aprobación del banco', 'info');
   } catch(e) {
     err.textContent = 'Error al procesar la transferencia. Intentá de nuevo.';
     err.classList.add('show');
