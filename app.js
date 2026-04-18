@@ -209,6 +209,7 @@ async function doRegister() {
       name, password: pass, balance: 0, accountNum: num,
       balanceUSD: 0, accountNumUSD: null,
       transactions: [], txUSD: [], prestamos: [], plazos: [],
+      lineaCredito: 10000000,
       createdAt: todayStr(),
     });
     suc.classList.add('show');
@@ -884,6 +885,16 @@ function simPrestamo() {
   document.getElementById('pr-sim-cuota').textContent = fmtARS(cuota);
   document.getElementById('pr-sim-total').textContent = fmtARS(cuota * n);
   document.getElementById('pr-sim-fecha1').textContent = fmtDate(addMonths(today(), 1));
+  // Mostrar línea crediticia disponible
+  const lineaTotal = (currentUser.lineaCredito != null) ? currentUser.lineaCredito : 10000000;
+  const prestamosActivos = (currentUser.prestamos || []).filter(p => p.cuotasPagas < p.cuotas);
+  const capitalUsado = prestamosActivos.reduce((acc, p) => acc + p.capital, 0);
+  const lineaDisponible = Math.max(0, lineaTotal - capitalUsado);
+  const elLinea = document.getElementById('pr-sim-linea');
+  if (elLinea) {
+    elLinea.textContent = fmtARS(lineaDisponible);
+    elLinea.style.color = C > lineaDisponible ? 'var(--red)' : 'var(--green)';
+  }
 }
  
 async function doSolicitarPrestamo() {
@@ -892,6 +903,18 @@ async function doSolicitarPrestamo() {
   const err = document.getElementById('pr-error'); err.classList.remove('show');
   if (!C || C <= 0) { err.textContent = 'Ingresá un capital válido.'; err.classList.add('show'); return; }
   if (!n || n < 1 || n > 72) { err.textContent = 'El plazo debe ser entre 1 y 72 meses.'; err.classList.add('show'); return; }
+
+  // Validar línea crediticia disponible
+  const lineaTotal = (currentUser.lineaCredito != null) ? currentUser.lineaCredito : 10000000;
+  const prestamosActivos = (currentUser.prestamos || []).filter(p => p.cuotasPagas < p.cuotas);
+  const capitalUsado = prestamosActivos.reduce((acc, p) => acc + p.capital, 0);
+  const lineaDisponible = Math.max(0, lineaTotal - capitalUsado);
+  if (C > lineaDisponible) {
+    err.textContent = lineaDisponible <= 0
+      ? 'No tenés línea crediticia disponible. Tu límite de ' + fmtARS(lineaTotal) + ' está agotado.'
+      : 'Superás tu línea crediticia disponible. Podés solicitar hasta ' + fmtARS(lineaDisponible) + '.';
+    err.classList.add('show'); return;
+  }
   const i = localConfig.tasaPR / 100 / 12;
   const cuota = cuotaFrancesa(C, i, n);
   const txId = (currentUser.txCounter || 200) + 1;
@@ -918,8 +941,34 @@ async function doSolicitarPrestamo() {
 function renderPrestamosUser() {
   const el = document.getElementById('prestamos-list');
   const prs = currentUser.prestamos || [];
-  if (!prs.length) { el.innerHTML = '<div class="empty-state">No tenés préstamos activos.</div>'; return; }
-  el.innerHTML = prs.map(pr => {
+  const lineaTotal = (currentUser.lineaCredito != null) ? currentUser.lineaCredito : 10000000;
+  const prestamosActivos = prs.filter(p => p.cuotasPagas < p.cuotas);
+  const capitalUsado = prestamosActivos.reduce((acc, p) => acc + p.capital, 0);
+  const lineaDisponible = Math.max(0, lineaTotal - capitalUsado);
+  const pctUsado = lineaTotal > 0 ? Math.min(100, (capitalUsado / lineaTotal) * 100) : 0;
+  const barColor = pctUsado >= 90 ? 'var(--red)' : pctUsado >= 60 ? 'var(--amber)' : 'var(--green)';
+
+  // Encabezado con línea crediticia
+  const lineaHtml = `
+    <div style="padding:1rem 1.25rem;border-bottom:1.5px solid var(--gray2);background:#fff;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;">
+        <span style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:1px;">LÍNEA CREDITICIA</span>
+        <span style="font-size:12px;font-weight:700;color:var(--text2);">${fmtARS(capitalUsado)} / ${fmtARS(lineaTotal)}</span>
+      </div>
+      <div style="background:var(--gray2);border-radius:99px;height:7px;overflow:hidden;">
+        <div style="width:${pctUsado}%;height:100%;background:${barColor};border-radius:99px;transition:width .4s;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:.4rem;">
+        <span style="font-size:11px;color:var(--text3);">Utilizado: <strong style="color:${barColor}">${fmtARS(capitalUsado)}</strong></span>
+        <span style="font-size:11px;color:var(--text3);">Disponible: <strong style="color:var(--green)">${fmtARS(lineaDisponible)}</strong></span>
+      </div>
+    </div>`;
+
+  if (!prs.length) {
+    el.innerHTML = lineaHtml + '<div class="empty-state">No tenés préstamos activos.</div>';
+    return;
+  }
+  el.innerHTML = lineaHtml + prs.map(pr => {
     const term = pr.cuotasPagas >= pr.cuotas, mora = pr.montoMora > 0;
     const badge = term ? '<span class="producto-badge badge-plazo">✓ Cancelado</span>'
       : mora ? '<span class="producto-badge badge-vencido">⚠ Mora</span>'
@@ -1111,6 +1160,14 @@ function renderAdminUsers() {
           <button class="btn-sm btn-add" onclick="adminSetLimite('${u.id}')">Setear</button>
         </div>
       </td>
+      <td>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Total: <strong>${fmtARS((u.lineaCredito != null) ? u.lineaCredito : 10000000)}</strong></div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">Disp: <strong style="color:var(--green)">${fmtARS(Math.max(0, ((u.lineaCredito != null) ? u.lineaCredito : 10000000) - (u.prestamos || []).filter(p => p.cuotasPagas < p.cuotas).reduce((a, p) => a + p.capital, 0)))}</strong></div>
+        <div class="amount-input-row">
+          <input type="number" id="adj-linea-${u.id}" placeholder="Nueva línea" min="0"/>
+          <button class="btn-sm btn-add" onclick="adminSetLineaCredito('${u.id}')">Setear</button>
+        </div>
+      </td>
       <td>${u.accountNumCajaAhorro ? '<strong style="color:var(--green)">' + fmtARS(u.balanceCajaAhorro || 0) + '</strong>' : '<span style="color:var(--text3)">Sin cuenta</span>'}</td>
       <td>${u.accountNumCajaAhorro ? `<div class="amount-input-row">
         <input type="number" id="adj-ca-${u.id}" placeholder="Monto" min="0"/>
@@ -1135,6 +1192,16 @@ async function adminSetLimite(uid) {
   await db.collection('users').doc(uid).update({ limiteDescubierto: lim });
   inp.value = '';
   showNotif('✓ Límite de descubierto actualizado a ' + fmtARS(lim));
+  await renderAdmin();
+}
+
+async function adminSetLineaCredito(uid) {
+  const inp = document.getElementById('adj-linea-' + uid);
+  const linea = parseFloat(inp.value);
+  if (isNaN(linea) || linea < 0) { showNotif('Ingresá una línea válida (0 o más).', 'error'); return; }
+  await db.collection('users').doc(uid).update({ lineaCredito: linea });
+  inp.value = '';
+  showNotif('✓ Línea crediticia actualizada a ' + fmtARS(linea) + ' para ' + uid);
   await renderAdmin();
 }
  
