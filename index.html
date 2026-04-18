@@ -529,12 +529,15 @@
           <div style="display:flex;gap:8px;">
             <button class="btn-primary" style="width:auto;padding:8px 18px;margin:0;font-size:13px" onclick="openModal('new-plazo')">+ ARS</button>
             <button class="btn-primary" style="width:auto;padding:8px 18px;margin:0;font-size:13px;background:var(--blue)" onclick="openModal('new-plazo-usd')">+ USD</button>
+            <button class="btn-primary" style="width:auto;padding:8px 18px;margin:0;font-size:13px;background:var(--green)" onclick="abrirModalPlazoUVA()">+ UVA</button>
           </div>
         </div>
         <div class="section-title">PLAZOS FIJOS EN ARS</div>
         <div class="card-box" id="plazos-list-ars"></div>
         <div class="section-title" style="margin-top:1.25rem;">PLAZOS FIJOS EN USD</div>
         <div class="card-box" id="plazos-list-usd"></div>
+        <div class="section-title" style="margin-top:1.25rem;">PLAZOS FIJOS UVA</div>
+        <div class="card-box" id="plazos-list-uva"></div>
       </div>
     </div>
   </div>
@@ -592,6 +595,13 @@
             <tbody id="admin-plazos-usd-body"></tbody>
           </table>
         </div>
+        <div class="users-table" style="margin-top:1rem;">
+          <div class="table-header"><span class="section-title" style="margin:0">PLAZOS FIJOS UVA ACTIVOS</span></div>
+          <table class="admin-table">
+            <thead><tr><th>USUARIO</th><th>CAPITAL ARS</th><th>UVAs</th><th>UVA INICIO</th><th>TASA</th><th>VENCIMIENTO</th></tr></thead>
+            <tbody id="admin-plazos-uva-body"></tbody>
+          </table>
+        </div>
       </div>
       <div id="apanel-divisas" style="display:none">
         <div class="users-table">
@@ -612,6 +622,7 @@
             <p style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1.5px;margin-bottom:.75rem;">TASAS DE INTERÉS</p>
             <div class="tasa-row"><label>Tasa Plazo Fijo ARS (TNA)</label><input type="number" id="cfg-tasa-pf" step="0.1" min="0"/><span class="unit">%</span></div>
             <div class="tasa-row"><label>Tasa Plazo Fijo USD (TNA)</label><input type="number" id="cfg-tasa-pf-usd" step="0.1" min="0"/><span class="unit">%</span></div>
+            <div class="tasa-row"><label>Tasa Plazo Fijo UVA (TNA adicional)</label><input type="number" id="cfg-tasa-pf-uva" step="0.1" min="0"/><span class="unit">%</span></div>
             <div class="tasa-row"><label>Tasa Préstamos (TNA)</label><input type="number" id="cfg-tasa-pr" step="0.1" min="0"/><span class="unit">%</span></div>
             <div class="tasa-row"><label>Mora mensual</label><input type="number" id="cfg-tasa-mora" step="0.1" min="0"/><span class="unit">%</span></div>
             <div class="tasa-row"><label>Descubierto cuenta corriente (TNA)</label><input type="number" id="cfg-tasa-desc" step="0.1" min="0"/><span class="unit">%</span></div>
@@ -736,6 +747,30 @@
     </div>
     <div id="pf-usd-error" class="error-msg"></div>
     <button class="btn-primary" style="background:var(--blue)" onclick="doConstituirPlazoUSD()">CONFIRMAR PLAZO FIJO USD</button>
+  </div></div>
+
+  <!-- MODAL PLAZO FIJO UVA -->
+  <div class="modal-overlay" id="modal-new-plazo-uva"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Constituir plazo fijo UVA</span><button class="modal-close" onclick="closeModal('new-plazo-uva')">✕</button></div>
+    <div class="fx-info-box" style="background:#e8f5e9;color:var(--green);border:1px solid #a5d6a7;">
+      <strong>Plazo fijo ajustado por inflación (UVA)</strong>
+      Tu capital se convierte a UVAs al constituirlo. Al vencimiento se acreditan las UVAs al valor del día, más un interés adicional (TNA). Plazo mínimo: 3 meses.
+    </div>
+    <div class="two-col">
+      <div class="form-group"><label>MONTO ($)</label><input type="number" id="pf-uva-monto" placeholder="Ej: 100000" min="100" oninput="simPlazoUVA()"/></div>
+      <div class="form-group"><label>PLAZO (3 A 12 MESES)</label><input type="number" id="pf-uva-plazo" placeholder="Ej: 6" min="3" max="12" oninput="simPlazoUVA()"/></div>
+    </div>
+    <div id="pf-uva-loading" style="display:none;text-align:center;padding:.75rem;font-size:13px;color:var(--text3);">⏳ Consultando UVA actual…</div>
+    <div class="simulacion-box" id="pf-uva-sim" style="display:none">
+      <div class="sim-row"><span class="sim-label">UVA al constituir</span><span class="sim-value" id="pf-uva-sim-uva-inicio"></span></div>
+      <div class="sim-row"><span class="sim-label">Capital en UVAs</span><span class="sim-value" id="pf-uva-sim-uvas"></span></div>
+      <div class="sim-row"><span class="sim-label">TNA adicional</span><span class="sim-value" id="pf-uva-sim-tna"></span></div>
+      <div class="sim-row"><span class="sim-label">Fecha de vencimiento</span><span class="sim-value" id="pf-uva-sim-fecha"></span></div>
+      <div class="sim-row" style="background:#f0faf0;border-radius:6px;padding:6px 8px;"><span class="sim-label" style="color:var(--text3);font-size:11px;line-height:1.4;">Al vencimiento el capital se ajusta por el UVA real del día (inflación). El interés TNA se aplica sobre el capital ya ajustado.</span></div>
+    </div>
+    <div class="cuenta-selector-group" id="pf-uva-cuenta-group"><label>¿DESDE QUÉ CUENTA DEBITAR?</label><select class="cuenta-select" id="pf-uva-cuenta"><option value="cc">Cuenta corriente</option><option value="ca">Caja de ahorro</option></select></div>
+    <div id="pf-uva-error" class="error-msg"></div>
+    <button class="btn-primary" style="background:var(--green)" id="btn-confirmar-uva" onclick="doConstituirPlazoUVA()">CONFIRMAR PLAZO FIJO UVA</button>
   </div></div>
 
   <!-- MODAL EMITIR CHEQUE -->
