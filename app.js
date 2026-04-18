@@ -1276,7 +1276,7 @@ async function fetchUVAPorFecha(fechaBuscadaISO) {
 async function abrirModalPlazoUVA() {
   _uvaCache = null; // refrescar al abrir
   openModal('new-plazo-uva');
-  // Pre-cargar UVA en cuanto se abre el modal
+  actualizarSelectoresCuenta(); // ocultar CA si el usuario no la tiene
   const loadEl = document.getElementById('pf-uva-loading');
   const simEl  = document.getElementById('pf-uva-sim');
   const errEl  = document.getElementById('pf-uva-error');
@@ -1881,7 +1881,7 @@ function actualizarSelectoresCuenta() {
   const hasCA = !!currentUser?.accountNumCajaAhorro;
   const grupos = [
     'buy-usd-cuenta-group','sell-usd-cuenta-group',
-    'pr-cuenta-group','pf-cuenta-group',
+    'pr-cuenta-group','pf-cuenta-group','pf-uva-cuenta-group',
     'comprar-acc-cuenta-group','vender-acc-cuenta-group',
     'tf-dest-cuenta-group','tf-ca-dest-cuenta-group',
   ];
