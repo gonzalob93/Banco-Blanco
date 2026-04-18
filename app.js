@@ -1217,18 +1217,14 @@ let _uvaCache = null;
 const BCRA_UVA_ID = 31;
 
 function _bcraUVAUrl(desde, hasta) {
-  // Encodificamos solo la URL base (sin query params) para que el worker
-  // pueda leer desde= y hasta= como params separados y reenviarlos al BCRA.
-  const base = `https://api.bcra.gob.ar/estadisticas/v3.0/monetarias/${BCRA_UVA_ID}`;
+  const base = `https://api.bcra.gob.ar/estadisticas/v4.0/Monetarias/${BCRA_UVA_ID}`;
   return `${PROXY}/?url=${encodeURIComponent(base)}&desde=${desde}&hasta=${hasta}`;
 }
 
-// Parsea la respuesta del BCRA y devuelve un array normalizado
-// con la misma forma { fecha: 'YYYY-MM-DD', valor: Number } que
-// usábamos con ArgentinaDatos, para no cambiar nada más en el código.
+// En v4 la respuesta viene como results[0].detalle[{ fecha, valor }]
 function _parseBCRAResults(json) {
-  const results = json?.results || [];
-  return results.map(r => ({ fecha: r.fecha, valor: r.valor }));
+  const detalle = json?.results?.[0]?.detalle || [];
+  return detalle.map(r => ({ fecha: r.fecha, valor: r.valor }));
 }
 
 // Obtiene el valor UVA más reciente desde la API oficial del BCRA.
@@ -1237,8 +1233,10 @@ function _parseBCRAResults(json) {
 // Devuelve { valor, fecha } o lanza un error.
 async function fetchUVAActual() {
   if (_uvaCache) return _uvaCache;
-  const hasta = new Date();
-  const desde = new Date(); desde.setDate(desde.getDate() - 10);
+  // hasta = ayer (el BCRA rechaza fechas de hoy o futuras con 400)
+  // desde = 15 días atrás para cubrir el rezago de publicación
+  const hasta = new Date(); hasta.setDate(hasta.getDate() - 1);
+  const desde = new Date(); desde.setDate(desde.getDate() - 15);
   const fmtISO = d => d.toISOString().split('T')[0];
   const url = _bcraUVAUrl(fmtISO(desde), fmtISO(hasta));
   const res = await fetch(url);
@@ -1246,7 +1244,6 @@ async function fetchUVAActual() {
   const json = await res.json();
   const data = _parseBCRAResults(json);
   if (!data.length) throw new Error('Sin datos UVA disponibles');
-  // La API devuelve ordenado ASC; tomamos el último valor disponible
   const ultimo = data[data.length - 1];
   _uvaCache = { valor: ultimo.valor, fecha: ultimo.fecha };
   return _uvaCache;
