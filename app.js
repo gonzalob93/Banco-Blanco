@@ -1217,8 +1217,10 @@ let _uvaCache = null;
 const BCRA_UVA_ID = 31;
 
 function _bcraUVAUrl(desde, hasta) {
-  const target = `https://api.bcra.gob.ar/estadisticas/v3.0/monetarias/${BCRA_UVA_ID}?desde=${desde}&hasta=${hasta}`;
-  return `${PROXY}/?url=${encodeURIComponent(target)}`;
+  // Encodificamos solo la URL base (sin query params) para que el worker
+  // pueda leer desde= y hasta= como params separados y reenviarlos al BCRA.
+  const base = `https://api.bcra.gob.ar/estadisticas/v3.0/monetarias/${BCRA_UVA_ID}`;
+  return `${PROXY}/?url=${encodeURIComponent(base)}&desde=${desde}&hasta=${hasta}`;
 }
 
 // Parsea la respuesta del BCRA y devuelve un array normalizado
