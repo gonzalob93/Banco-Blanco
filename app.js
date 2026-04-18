@@ -2111,11 +2111,14 @@ function renderChequesUser() {
     elE.innerHTML = emitidos.map(ch => {
       const badge = badgeCheque(ch.estado);
       const esDiferido = ch.fechaPago !== ch.fechaEmision;
-      return `<div class="producto-item"><div class="prod-info">
-        <div class="prod-title">Cheque Nº ${ch.nro} — ${fmtARS(ch.monto)} ${badge}</div>
-        <div class="prod-detail">Para: <strong>${ch.destinatario}</strong> · Emitido: ${ch.fechaEmision}${esDiferido ? ' · Pago desde: <strong>' + ch.fechaPago + '</strong>' : ''}</div>
-        ${ch.estado === 'rechazado' ? '<div class="prod-detail" style="color:var(--red)">Rechazado por falta de fondos</div>' : ''}
-      </div></div>`;
+      return `<div class="producto-item" style="align-items:flex-start;flex-direction:column;gap:8px;">
+        <div class="prod-info">
+          <div class="prod-title">Cheque Nº ${ch.nro} — ${fmtARS(ch.monto)} ${badge}</div>
+          <div class="prod-detail">Para: <strong>${ch.destinatario}</strong> · Emitido: ${ch.fechaEmision}${esDiferido ? ' · Pago desde: <strong>' + ch.fechaPago + '</strong>' : ''}</div>
+          ${ch.estado === 'rechazado' ? '<div class="prod-detail" style="color:var(--red)">Rechazado por falta de fondos</div>' : ''}
+        </div>
+        <button class="btn-sm" style="font-size:11px;padding:4px 12px;background:var(--gray);color:var(--text2);border:1px solid var(--gray2);border-radius:8px;cursor:pointer;" onclick="descargarChequePDF('${ch.nro}','emitido')">⬇ PDF</button>
+      </div>`;
     }).join('');
   }
 
@@ -2147,6 +2150,7 @@ function renderChequesUser() {
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           ${puedeDepositar ? `<button class="btn-sm btn-add" style="font-size:12px;padding:6px 14px;" onclick="depositarCheque('${ch.nro}')">Depositar</button>` : ''}
           ${puedeDescontar ? `<button class="btn-sm" style="font-size:12px;padding:6px 14px;background:var(--amber-bg);color:var(--amber);border:1px solid #fcd34d;border-radius:8px;cursor:pointer;" onclick="abrirDescuentoCheque('${ch.nro}')">Descontar</button>` : ''}
+          <button class="btn-sm" style="font-size:11px;padding:4px 12px;background:var(--gray);color:var(--text2);border:1px solid var(--gray2);border-radius:8px;cursor:pointer;" onclick="descargarChequePDF('${ch.nro}','recibido')">⬇ PDF</button>
         </div>
       </div>`;
     }).join('');
@@ -2686,6 +2690,7 @@ function renderTransferenciasExt() {
         · ${t.fecha}
       </div>
       ${estado === 'rechazada' ? '<div class="prod-detail" style="color:var(--red);">Los fondos fueron devueltos a tu cuenta.</div>' : ''}
+      ${estado === 'aprobada' ? `<div style="margin-top:6px;"><button class="btn-sm" style="font-size:11px;padding:4px 12px;background:var(--gray);color:var(--text2);border:1px solid var(--gray2);border-radius:8px;cursor:pointer;" onclick="descargarTransfExtPDF('${t.id}')">⬇ Descargar comprobante PDF</button></div>` : ''}
     </div>`;
   }).join('');
 }
@@ -2938,6 +2943,176 @@ function descargarHistorialPDF() {
   ventana.focus();
   // Pequeño delay para que el SVG termine de renderizar antes del diálogo de impresión
   setTimeout(() => ventana.print(), 400);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PDF — HELPERS COMPARTIDOS
+// ════════════════════════════════════════════════════════════════
+
+const _pdfLogoSVG = `<svg width="36" height="36" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="15" cy="15" r="15" fill="#db0011"/>
+  <rect x="6" y="13"   width="18" height="3.5" rx="1.75" fill="white"/>
+  <rect x="6" y="8.5"  width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.55)"/>
+  <rect x="6" y="17.5" width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.55)"/>
+  <rect x="6" y="4"    width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.25)"/>
+  <rect x="6" y="22"   width="18" height="3.5" rx="1.75" fill="rgba(255,255,255,0.25)"/>
+</svg>`;
+
+function _pdfHeader(titulo, subtitulo) {
+  return `
+  <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #db0011;padding-bottom:20px;margin-bottom:24px;">
+    <div style="display:flex;align-items:center;gap:14px;">
+      ${_pdfLogoSVG}
+      <div>
+        <div style="font-size:22px;font-weight:900;color:#1a1a1a;line-height:1;">Banco Blanco</div>
+        <div style="font-size:10px;color:#888;letter-spacing:3px;margin-top:3px;">BANCA PRIVADA</div>
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:13px;font-weight:700;color:#1a1a1a;">${titulo}</div>
+      ${subtitulo ? `<div style="font-size:11px;color:#888;margin-top:3px;">${subtitulo}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function _pdfTitular(nombre, cuentas, fecha) {
+  return `
+  <div style="background:#f5f5f5;border-radius:8px;padding:14px 18px;margin-bottom:24px;">
+    <div style="font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:6px;">${nombre}</div>
+    ${cuentas ? `<div style="font-size:12px;color:#444;line-height:1.8;">${cuentas}</div>` : ''}
+    <div style="font-size:11px;color:#888;margin-top:6px;">Fecha de emisión: ${fecha}</div>
+  </div>`;
+}
+
+function _pdfFila(label, value, accent) {
+  return `<tr>
+    <td style="padding:10px 14px;border-bottom:1px solid #e8e8e8;font-size:12px;color:#888;font-weight:600;width:42%;">${label}</td>
+    <td style="padding:10px 14px;border-bottom:1px solid #e8e8e8;font-size:13px;color:${accent || '#1a1a1a'};font-weight:${accent ? '700' : '400'};">${value}</td>
+  </tr>`;
+}
+
+function _pdfBase(titulo, body, fechaEmision) {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <title>${titulo} – Banco Blanco</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:Arial,sans-serif;background:#fff;color:#1a1a1a;padding:32px;max-width:720px;margin:0 auto;}
+    table{width:100%;border-collapse:collapse;}
+    tr:last-child td{border-bottom:none;}
+    .footer{font-size:10px;color:#aaa;text-align:center;margin-top:36px;border-top:1px solid #e8e8e8;padding-top:16px;line-height:1.6;}
+    @media print{body{padding:20px;}}
+  </style>
+</head>
+<body>
+  ${body}
+  <div class="footer">
+    Banco Blanco — Documento generado el ${fechaEmision}<br>
+    Solo a fines informativos · No constituye un comprobante oficial ni tiene validez legal
+  </div>
+</body>
+</html>`;
+}
+
+function _pdfAbrir(html, titulo) {
+  const v = window.open('', '_blank', 'width=780,height=680');
+  v.document.write(html);
+  v.document.close();
+  v.focus();
+  setTimeout(() => v.print(), 400);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PDF — CHEQUE (emitido o recibido)
+// ════════════════════════════════════════════════════════════════
+
+function descargarChequePDF(nro, tipo) {
+  // tipo: 'emitido' | 'recibido'
+  const lista = tipo === 'emitido'
+    ? (currentUser.chequesEmitidos  || [])
+    : (currentUser.chequesRecibidos || []);
+  const ch = lista.find(c => c.nro === nro);
+  if (!ch) return;
+
+  const fecha     = todayStr();
+  const esDif     = ch.fechaPago !== ch.fechaEmision;
+  const tipoCheque = esDif ? 'Cheque de pago diferido' : 'Cheque común';
+
+  const estadoLabel = {
+    pendiente:           'Pendiente de depósito',
+    cobrado:             'Cobrado / Depositado',
+    rechazado:           'Rechazado — fondos insuficientes',
+    vencido:             'Vencido sin depositar',
+    en_descuento:        'En proceso de descuento',
+    descuento_rechazado: 'Descuento rechazado por el banco',
+  }[ch.estado] || ch.estado;
+
+  const estadoColor = ['cobrado'].includes(ch.estado) ? '#2e7d32'
+    : ['rechazado','vencido','descuento_rechazado'].includes(ch.estado) ? '#c62828'
+    : '#b45309';
+
+  const body = `
+    ${_pdfHeader('Copia de cheque', tipoCheque)}
+    ${_pdfTitular(currentUser.name, '', fecha)}
+    <div style="border:1px solid #e8e8e8;border-radius:10px;overflow:hidden;margin-bottom:24px;">
+      <table>
+        ${_pdfFila('Número de cheque', 'Nº ' + ch.nro)}
+        ${_pdfFila('Tipo', tipoCheque)}
+        ${tipo === 'emitido'
+          ? _pdfFila('Beneficiario', ch.destinatario)
+          : _pdfFila('Emisor', ch.emisor)}
+        ${_pdfFila('Importe', fmtARS(ch.monto), '#1565c0')}
+        ${_pdfFila('Fecha de emisión', ch.fechaEmision)}
+        ${esDif ? _pdfFila('Disponible desde', ch.fechaPago) : ''}
+        ${_pdfFila('Estado', estadoLabel, estadoColor)}
+      </table>
+    </div>`;
+
+  _pdfAbrir(_pdfBase('Cheque Nº ' + nro, body, fecha), 'Cheque');
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PDF — COMPROBANTE DE TRANSFERENCIA AL EXTERIOR
+// ════════════════════════════════════════════════════════════════
+
+function descargarTransfExtPDF(txId) {
+  const t = (currentUser.transferenciasExt || []).find(tx => String(tx.id) === String(txId));
+  if (!t) return;
+
+  const fecha = todayStr();
+
+  const debitoDesc = t.cuentaOrigen === 'usd'
+    ? fmtUSD(t.importeUSD) + ' desde Caja de Ahorro USD'
+    : t.cuentaOrigen === 'ca'
+      ? fmtARS(t.importeARS) + ' desde Caja de Ahorro ARS (TC ' + fmtTC(t.tc) + '/USD)'
+      : fmtARS(t.importeARS) + ' desde Cuenta Corriente (TC ' + fmtTC(t.tc) + '/USD)';
+
+  const body = `
+    ${_pdfHeader('Comprobante de transferencia', 'Transferencia internacional — SWIFT/Wire')}
+    ${_pdfTitular(currentUser.name, 'Cta. Cte.: ' + (currentUser.accountNum || '—'), fecha)}
+    <div style="font-size:10px;color:#888;font-weight:700;letter-spacing:1.5px;margin-bottom:10px;">DATOS DE LA OPERACIÓN</div>
+    <div style="border:1px solid #e8e8e8;border-radius:10px;overflow:hidden;margin-bottom:20px;">
+      <table>
+        ${_pdfFila('Fecha de solicitud', t.fecha)}
+        ${_pdfFila('Estado', t.estado === 'aprobada' ? '✓ Aprobada' : t.estado === 'rechazada' ? '✕ Rechazada' : '⏳ Pendiente', t.estado === 'aprobada' ? '#2e7d32' : t.estado === 'rechazada' ? '#c62828' : '#b45309')}
+        ${_pdfFila('Importe transferido', fmtUSD(t.importeUSD), '#1565c0')}
+        ${_pdfFila('Débito en cuenta', debitoDesc)}
+      </table>
+    </div>
+    <div style="font-size:10px;color:#888;font-weight:700;letter-spacing:1.5px;margin-bottom:10px;">DATOS DEL BENEFICIARIO</div>
+    <div style="border:1px solid #e8e8e8;border-radius:10px;overflow:hidden;margin-bottom:20px;">
+      <table>
+        ${_pdfFila('Nombre del beneficiario', t.beneficiario)}
+        ${_pdfFila('País de destino', t.pais)}
+        ${_pdfFila('Número de cuenta', t.numeroCuenta)}
+        ${_pdfFila('Banco beneficiario (' + t.tipoCodBenef.toUpperCase() + ')', t.codBenef)}
+        ${t.codCorresp ? _pdfFila('Banco corresponsal (' + t.tipoCodCorresp.toUpperCase() + ')', t.codCorresp) : ''}
+      </table>
+    </div>`;
+
+  _pdfAbrir(_pdfBase('Transferencia al exterior', body, fecha), 'Transferencia');
 }
 
 // ─── CIERRE DE MODALES ────────────────────────────────────────────
