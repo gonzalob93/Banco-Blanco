@@ -242,6 +242,8 @@ function subscribeToUser(username) {
 }
  
 // ─── VENCIMIENTOS ─────────────────────────────────────────────────
+// Se ejecuta al login. Reconstruye todo lo que debería haber ocurrido
+// desde el último acceso del usuario, sin importar cuántos días pasaron.
 async function procesarVencimientos() {
   if (!currentUser) return;
   const now = today();
@@ -258,7 +260,21 @@ async function procesarVencimientos() {
   let balanceUSD = data.balanceUSD || 0;
   let txCounter = data.txCounter || 200;
 
-  // Plazos fijos ARS vencidos — acreditar en la cuenta de origen
+  // ── Calcular días ausentes para intereses CA ──────────────────────
+  // Se usa para acumular intereses de todos los días no procesados.
+  const ultimoCalculoCA = data.ultimoCalculoCA || '';
+  const hoyStr = todayStr();
+  let diasAusente = 0;
+  if (data.accountNumCajaAhorro && ultimoCalculoCA && ultimoCalculoCA !== hoyStr) {
+    const [d, m, y] = ultimoCalculoCA.split('/');
+    const fechaUltimoCalculo = new Date(+y, +m - 1, +d);
+    diasAusente = Math.max(0, Math.floor((now - fechaUltimoCalculo) / 86400000));
+  } else if (data.accountNumCajaAhorro && !ultimoCalculoCA) {
+    diasAusente = 1;
+  }
+
+  // ── Plazos fijos ARS vencidos ─────────────────────────────────────
+  // Acredita capital + interés en la cuenta de origen al vencer.
   plazos.forEach(pf => {
     if (!pf.acreditado && dateFromStr(pf.fechaVenc) <= now) {
       const total = pf.capital + pf.interes;
@@ -266,15 +282,15 @@ async function procesarVencimientos() {
       changed = true;
       if (pf.cuentaOrigen === 'ca' && data.accountNumCajaAhorro) {
         balanceCA += total;
-        txsCA.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo – capital + interés (Caja Ahorro)', amount: total, date: todayStr() });
+        txsCA.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo – capital + interés (Caja Ahorro)', amount: total, date: hoyStr });
       } else {
         balance += total;
-        txs.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo – capital + interés', amount: total, date: todayStr() });
+        txs.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo – capital + interés', amount: total, date: hoyStr });
       }
     }
   });
 
-  // Plazos fijos USD vencidos — acreditar en Caja de Ahorro USD
+  // ── Plazos fijos USD vencidos ─────────────────────────────────────
   if (data.accountNumUSD) {
     plazosUSD.forEach(pf => {
       if (!pf.acreditado && dateFromStr(pf.fechaVenc) <= now) {
@@ -282,43 +298,56 @@ async function procesarVencimientos() {
         pf.acreditado = true;
         changed = true;
         balanceUSD += total;
-        txsUSD.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo USD – capital + interés (' + pf.tna + '% TNA)', amount: total, date: todayStr() });
+        txsUSD.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo USD – capital + interés (' + pf.tna + '% TNA)', amount: total, date: hoyStr });
       }
     });
   }
 
-  // Cuotas de préstamos vencidas — debitar de la cuenta de origen
+  // ── Cuotas de préstamos vencidas ──────────────────────────────────
+  // Itera con while hasta ponerse al día: si el usuario estuvo ausente
+  // 3 meses y tiene 3 cuotas vencidas, las procesa todas una por una,
+  // en orden cronológico, con la fecha real de cada vencimiento.
   prestamos.forEach(pr => {
-    if (pr.cuotasPagas < pr.cuotas) {
+    while (pr.cuotasPagas < pr.cuotas) {
       const fechaCuota = dateFromStr(pr.proximaFecha);
-      if (fechaCuota <= now) {
-        const cuotaAdeudada = pr.cuotaMensual + (pr.montoMora || 0);
-        const usaCA = pr.cuentaOrigen === 'ca' && data.accountNumCajaAhorro;
-        const saldoDisponible = usaCA ? balanceCA : balance;
-        if (saldoDisponible >= cuotaAdeudada) {
-          if (usaCA) {
-            balanceCA -= cuotaAdeudada;
-            txsCA.push({ id: ++txCounter, type: 'debit', desc: `Cuota préstamo ${pr.cuotasPagas + 1}/${pr.cuotas} (Caja Ahorro)`, amount: cuotaAdeudada, date: todayStr() });
-          } else {
-            balance -= cuotaAdeudada;
-            txs.push({ id: ++txCounter, type: 'debit', desc: `Cuota préstamo ${pr.cuotasPagas}/${pr.cuotas}`, amount: cuotaAdeudada, date: todayStr() });
-          }
-          pr.cuotasPagas++;
-          pr.montoMora = 0;
-          pr.proximaFecha = fmtDate(addMonths(fechaCuota, 1));
-          changed = true;
+      if (fechaCuota > now) break; // esta cuota aún no venció
+
+      const nroCuota = pr.cuotasPagas + 1;
+      const cuotaBase = pr.cuotaMensual;
+      const moraAcumulada = pr.montoMora || 0;
+      const cuotaAdeudada = parseFloat((cuotaBase + moraAcumulada).toFixed(2));
+      const fechaCuotaStr = fmtDate(fechaCuota);
+      const usaCA = pr.cuentaOrigen === 'ca' && data.accountNumCajaAhorro;
+      const saldoDisponible = usaCA ? balanceCA : balance;
+
+      if (saldoDisponible >= cuotaBase) {
+        // Saldo suficiente: cobrar cuota (+ mora acumulada si hay)
+        if (usaCA) {
+          balanceCA = parseFloat((balanceCA - cuotaAdeudada).toFixed(2));
+          txsCA.push({ id: ++txCounter, type: 'debit', desc: `Cuota préstamo ${nroCuota}/${pr.cuotas} (Caja Ahorro)`, amount: cuotaAdeudada, date: fechaCuotaStr });
         } else {
-          // Saldo insuficiente: aplicar mora sobre balance general (CC) como fallback
-          const mora = pr.cuotaMensual * (pr.cuotas - pr.cuotasPagas) * (localConfig.tasaMora / 100);
-          pr.montoMora = (pr.montoMora || 0) + mora;
-          changed = true;
-          txs.push({ id: ++txCounter, type: 'debit', desc: `Mora – saldo insuficiente (cuota ${pr.cuotasPagas + 1})`, amount: mora, date: todayStr() });
+          balance = parseFloat((balance - cuotaAdeudada).toFixed(2));
+          txs.push({ id: ++txCounter, type: 'debit', desc: `Cuota préstamo ${nroCuota}/${pr.cuotas}`, amount: cuotaAdeudada, date: fechaCuotaStr });
         }
+        pr.cuotasPagas++;
+        pr.montoMora = 0;
+        pr.proximaFecha = fmtDate(addMonths(fechaCuota, 1));
+        changed = true;
+      } else {
+        // Saldo insuficiente: aplicar mora mensual sobre el capital pendiente
+        // y avanzar la fecha para no quedarse en un loop infinito.
+        const capitalPendiente = cuotaBase * (pr.cuotas - pr.cuotasPagas);
+        const mora = parseFloat((capitalPendiente * (localConfig.tasaMora / 100)).toFixed(2));
+        pr.montoMora = parseFloat(((pr.montoMora || 0) + mora).toFixed(2));
+        pr.proximaFecha = fmtDate(addMonths(fechaCuota, 1));
+        changed = true;
+        txs.push({ id: ++txCounter, type: 'debit', desc: `Mora – saldo insuficiente (cuota ${nroCuota}/${pr.cuotas})`, amount: mora, date: fechaCuotaStr });
       }
     }
   });
- 
-  // Cheques recibidos vencidos — expirar si pasaron 30 días sin depositar
+
+  // ── Cheques recibidos vencidos ────────────────────────────────────
+  // Expira cheques pendientes que no fueron depositados en 30 días.
   const chequesRecibidos = [...(data.chequesRecibidos || [])];
   chequesRecibidos.forEach(ch => {
     if (ch.estado === 'pendiente') {
@@ -330,46 +359,67 @@ async function procesarVencimientos() {
       }
     }
   });
-  if (chequesRecibidos.some((ch, i) => ch.estado !== (data.chequesRecibidos || [])[i]?.estado)) {
-    changed = true;
-  }
-  if (data.accountNumCajaAhorro) {
-    const hoy = now;
-    const esdia1 = hoy.getDate() === 1;
-    const mesActual = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
-    const ultimaAcreditacion = data.ultimaAcreditacionCA || '';
-    if (esdia1 && ultimaAcreditacion !== mesActual && (data.interesesCAacumulados || 0) > 0) {
-      const intCA = parseFloat((data.interesesCAacumulados || 0).toFixed(2));
-      balanceCA += intCA;
-      changed = true;
-      txsCA.push({ id: ++txCounter, type: 'credit', desc: 'Intereses caja de ahorro – ' + (localConfig.tasaCA || 4) + '% TNA', amount: intCA, date: todayStr() });
+
+  // ── Intereses de Caja de Ahorro ───────────────────────────────────
+  // Acumula el interés diario de TODOS los días ausentes (no solo hoy).
+  // El día 1 de cada mes acredita el acumulado del mes anterior como tx visible.
+  if (data.accountNumCajaAhorro && (diasAusente > 0 || ultimoCalculoCA !== hoyStr)) {
+    const tasaDiaria = (localConfig.tasaCA || 4) / 100 / 365;
+    let interesesAcumulados = data.interesesCAacumulados || 0;
+
+    // Reconstruir día por día para capturar correctamente los cortes de mes
+    const [d0, m0, y0] = (ultimoCalculoCA || hoyStr).split('/');
+    let cursor = ultimoCalculoCA
+      ? new Date(+y0, +m0 - 1, +d0)
+      : new Date(now);
+
+    // Avanzar el cursor al día siguiente al último cálculo
+    if (ultimoCalculoCA) cursor.setDate(cursor.getDate() + 1);
+
+    while (cursor <= now) {
+      const esDia1 = cursor.getDate() === 1;
+      const mesCursor = cursor.getFullYear() + '-' + String(cursor.getMonth() + 1).padStart(2, '0');
+
+      // Acreditar intereses acumulados el día 1 de cada mes
+      if (esDia1 && interesesAcumulados > 0) {
+        const intCA = parseFloat(interesesAcumulados.toFixed(2));
+        balanceCA = parseFloat((balanceCA + intCA).toFixed(2));
+        txsCA.push({
+          id: ++txCounter, type: 'credit',
+          desc: 'Intereses caja de ahorro – ' + (localConfig.tasaCA || 4) + '% TNA',
+          amount: intCA,
+          date: fmtDate(cursor),
+        });
+        interesesAcumulados = 0;
+        changed = true;
+      }
+
+      // Acumular interés diario sobre el saldo actual (silencioso)
+      if (balanceCA > 0) {
+        interesesAcumulados = parseFloat((interesesAcumulados + balanceCA * tasaDiaria).toFixed(6));
+        changed = true;
+      }
+
+      cursor.setDate(cursor.getDate() + 1);
     }
-    // Acumular interés diario (silencioso, no genera transacción)
-    const ultimoCalculo = data.ultimoCalculoCA || '';
-    const hoyStr = todayStr();
-    if (ultimoCalculo !== hoyStr && balanceCA > 0) {
-      const intDiario = parseFloat((balanceCA * ((localConfig.tasaCA || 4) / 100) / 365).toFixed(6));
-      const nuevosAcumulados = parseFloat(((data.interesesCAacumulados || 0) + intDiario).toFixed(6));
-      changed = true;
-      data._nuevosInteresesCA = nuevosAcumulados;
-      data._hoyStr = hoyStr;
-    }
+
+    // Guardar el acumulado actualizado para el próximo login
+    data._nuevosInteresesCA = interesesAcumulados;
+    data._hoyStr = hoyStr;
   }
 
+  // ── Persistir en Firestore ────────────────────────────────────────
   if (changed) {
-    const upd = { balance, plazos, prestamos, transactions: txs, txCounter, chequesRecibidos };
+    const upd = {
+      balance, plazos, prestamos, transactions: txs,
+      txCounter, chequesRecibidos,
+      ultimoLogin: hoyStr,
+    };
     if (data.accountNumCajaAhorro) {
       upd.balanceCajaAhorro = balanceCA;
       upd.txCajaAhorro = txsCA;
-      upd.ultimoCalculoCA = data._hoyStr || todayStr();
+      upd.ultimoCalculoCA = hoyStr;
       if (data._nuevosInteresesCA !== undefined) upd.interesesCAacumulados = data._nuevosInteresesCA;
-      const hoy = now;
-      const esdia1 = hoy.getDate() === 1;
-      const mesActual = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
-      if (esdia1 && (data.ultimaAcreditacionCA || '') !== mesActual && (data.interesesCAacumulados || 0) > 0) {
-        upd.interesesCAacumulados = 0;
-        upd.ultimaAcreditacionCA = mesActual;
-      }
     }
     if (data.accountNumUSD) {
       upd.balanceUSD = balanceUSD;
@@ -377,6 +427,9 @@ async function procesarVencimientos() {
       upd.plazosUSD = plazosUSD;
     }
     await db.collection('users').doc(currentUser.id).update(upd);
+  } else {
+    // Aunque no haya cambios financieros, actualizamos ultimoLogin
+    await db.collection('users').doc(currentUser.id).update({ ultimoLogin: hoyStr });
   }
 }
  
