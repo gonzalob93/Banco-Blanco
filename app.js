@@ -103,7 +103,7 @@ async function ensureConfig() {
   const ref = db.collection('config').doc('global');
   const snap = await ref.get();
   if (!snap.exists) {
-    const defaults = { tasaPF: 10, tasaPFUSD: 2, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tasaCA: 4, tcCompra: 1370, tcVenta: 1400, topeDeposito: 1000000, saldoMaxARS: 50000000 };
+    const defaults = { tasaPF: 10, tasaPFUSD: 2, tasaPFUVA: 1, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tasaCA: 4, tcCompra: 1370, tcVenta: 1400, topeDeposito: 1000000, saldoMaxARS: 50000000 };
     await ref.set(defaults);
     localConfig = defaults;
   } else {
@@ -254,6 +254,7 @@ async function procesarVencimientos() {
   const txsUSD = [...(data.txUSD || [])];
   const plazos = [...(data.plazos || [])];
   const plazosUSD = [...(data.plazosUSD || [])];
+  const plazosUVA = [...(data.plazosUVA || [])];
   const prestamos = [...(data.prestamos || [])];
   let balance = data.balance;
   let balanceCA = data.balanceCajaAhorro || 0;
@@ -301,6 +302,42 @@ async function procesarVencimientos() {
         txsUSD.push({ id: ++txCounter, type: 'credit', desc: 'Vencimiento plazo fijo USD – capital + interés (' + pf.tna + '% TNA)', amount: total, date: hoyStr });
       }
     });
+  }
+
+  // ── Plazos fijos UVA vencidos ─────────────────────────────────────
+  // Para cada plazo vencido consulta el UVA real de la fecha de vencimiento
+  // desde la API oficial del BCRA vía el proxy existente.
+  // Si la API falla, el plazo queda sin acreditar y se reintenta al próximo login.
+  const plazosUVAVencidos = plazosUVA.filter(pf => !pf.acreditado && dateFromStr(pf.fechaVenc) <= now);
+  for (const pf of plazosUVAVencidos) {
+    try {
+      const fechaVencISO = pf.fechaVenc.split('/').reverse().join('-'); // dd/mm/yyyy → yyyy-mm-dd
+      const uvaVenc = await fetchUVAPorFecha(fechaVencISO);
+
+      const capitalAjustado   = parseFloat((pf.cantidadUVAs * uvaVenc).toFixed(2));
+      const interesAdicional  = parseFloat((capitalAjustado * (pf.tna / 100) * (pf.meses / 12)).toFixed(2));
+      const total             = parseFloat((capitalAjustado + interesAdicional).toFixed(2));
+
+      pf.acreditado           = true;
+      pf.uvaVenc              = uvaVenc;
+      pf.capitalAjustadoARS   = capitalAjustado;
+      pf.interesARS           = interesAdicional;
+      pf.capitalAcreditadoARS = total;
+      changed = true;
+
+      const desc = `Vencimiento PF UVA – ${Number(pf.cantidadUVAs).toLocaleString('es-AR', { minimumFractionDigits: 4 })} UVAs × ${fmtARS(uvaVenc)} + interés ${pf.tna}% TNA`;
+
+      if (pf.cuentaOrigen === 'ca' && data.accountNumCajaAhorro) {
+        balanceCA = parseFloat((balanceCA + total).toFixed(2));
+        txsCA.push({ id: ++txCounter, type: 'credit', desc, amount: total, date: hoyStr });
+      } else {
+        balance = parseFloat((balance + total).toFixed(2));
+        txs.push({ id: ++txCounter, type: 'credit', desc, amount: total, date: hoyStr });
+      }
+    } catch(e) {
+      // Si el BCRA no responde para este plazo, se reintenta al próximo login
+      console.warn('No se pudo obtener UVA para vencimiento ' + pf.fechaVenc + '. Se reintentará.', e);
+    }
   }
 
   // ── Cuotas de préstamos vencidas ──────────────────────────────────
@@ -414,6 +451,7 @@ async function procesarVencimientos() {
       balance, plazos, prestamos, transactions: txs,
       txCounter, chequesRecibidos,
       ultimoLogin: hoyStr,
+      plazosUVA,
     };
     if (data.accountNumCajaAhorro) {
       upd.balanceCajaAhorro = balanceCA;
@@ -971,6 +1009,8 @@ function renderPlazosUser() {
       </div></div>`;
     }).join('');
   }
+  // ── Listado UVA ──
+  renderPlazosUVAUser();
 }
 
 // ─── PLAZOS FIJOS USD ─────────────────────────────────────────────
@@ -1164,6 +1204,212 @@ async function adminAdjustUSD(uid, mode) {
   await renderAdmin();
 }
  
+// ════════════════════════════════════════════════════════════════
+//  MÓDULO PLAZOS FIJOS UVA
+// ════════════════════════════════════════════════════════════════
+
+// Cache local del UVA para no llamar a la API más de una vez por sesión
+let _uvaCache = null;
+
+// ── Helpers para construir URLs del BCRA vía el proxy existente ───
+// El proxy recibe ?url=<encoded> y agrega los headers CORS necesarios.
+// Variable 31 = UVA (Unidad de Valor Adquisitivo).
+const BCRA_UVA_ID = 31;
+
+function _bcraUVAUrl(desde, hasta) {
+  const target = `https://api.bcra.gob.ar/estadisticas/v3.0/datosvariable/${BCRA_UVA_ID}/${desde}/${hasta}`;
+  return `${PROXY}/?url=${encodeURIComponent(target)}`;
+}
+
+// Parsea la respuesta del BCRA y devuelve un array normalizado
+// con la misma forma { fecha: 'YYYY-MM-DD', valor: Number } que
+// usábamos con ArgentinaDatos, para no cambiar nada más en el código.
+function _parseBCRAResults(json) {
+  const results = json?.results || [];
+  return results.map(r => ({ fecha: r.fecha, valor: r.valor }));
+}
+
+// Obtiene el valor UVA más reciente desde la API oficial del BCRA.
+// Pide los últimos 10 días para asegurar tener al menos un valor
+// (el BCRA publica con 2-3 días hábiles de rezago).
+// Devuelve { valor, fecha } o lanza un error.
+async function fetchUVAActual() {
+  if (_uvaCache) return _uvaCache;
+  const hasta = new Date();
+  const desde = new Date(); desde.setDate(desde.getDate() - 10);
+  const fmtISO = d => d.toISOString().split('T')[0];
+  const url = _bcraUVAUrl(fmtISO(desde), fmtISO(hasta));
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Error al consultar UVA BCRA: HTTP ' + res.status);
+  const json = await res.json();
+  const data = _parseBCRAResults(json);
+  if (!data.length) throw new Error('Sin datos UVA disponibles');
+  // La API devuelve ordenado ASC; tomamos el último valor disponible
+  const ultimo = data[data.length - 1];
+  _uvaCache = { valor: ultimo.valor, fecha: ultimo.fecha };
+  return _uvaCache;
+}
+
+// Busca el UVA de una fecha específica consultando la API del BCRA.
+// Pide un rango de ±5 días alrededor de la fecha buscada para
+// cubrir fines de semana y feriados donde no hay publicación.
+// Devuelve el valor numérico o lanza un error.
+async function fetchUVAPorFecha(fechaBuscadaISO) {
+  const base = new Date(fechaBuscadaISO + 'T00:00:00');
+  const desde = new Date(base); desde.setDate(desde.getDate() - 5);
+  const hasta = new Date(base); hasta.setDate(hasta.getDate() + 1);
+  const fmtISO = d => d.toISOString().split('T')[0];
+  const url = _bcraUVAUrl(fmtISO(desde), fmtISO(hasta));
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Error al consultar UVA BCRA para fecha: HTTP ' + res.status);
+  const json = await res.json();
+  const data = _parseBCRAResults(json);
+  if (!data.length) throw new Error('Sin datos UVA para la fecha ' + fechaBuscadaISO);
+  // Buscar coincidencia exacta primero, si no el más cercano anterior
+  const exacto = data.find(d => d.fecha === fechaBuscadaISO);
+  if (exacto) return exacto.valor;
+  const anteriores = data.filter(d => d.fecha <= fechaBuscadaISO);
+  if (anteriores.length) return anteriores[anteriores.length - 1].valor;
+  return data[0].valor;
+}
+
+// Abre el modal UVA y dispara la carga del UVA actual en paralelo
+async function abrirModalPlazoUVA() {
+  _uvaCache = null; // refrescar al abrir
+  openModal('new-plazo-uva');
+  // Pre-cargar UVA en cuanto se abre el modal
+  const loadEl = document.getElementById('pf-uva-loading');
+  const simEl  = document.getElementById('pf-uva-sim');
+  const errEl  = document.getElementById('pf-uva-error');
+  loadEl.style.display = '';
+  simEl.style.display  = 'none';
+  errEl.classList.remove('show');
+  try {
+    await fetchUVAActual();
+    loadEl.style.display = 'none';
+    simPlazoUVA(); // si ya hay montos ingresados, simular
+  } catch(e) {
+    loadEl.style.display = 'none';
+    errEl.textContent = 'No se pudo obtener el valor UVA. Verificá tu conexión.';
+    errEl.classList.add('show');
+  }
+}
+
+// Simulación en tiempo real mientras el usuario escribe
+async function simPlazoUVA() {
+  const M = parseFloat(document.getElementById('pf-uva-monto').value);
+  const n = parseInt(document.getElementById('pf-uva-plazo').value);
+  const simEl = document.getElementById('pf-uva-sim');
+  if (!M || M <= 0 || !n || n < 3 || n > 12) { simEl.style.display = 'none'; return; }
+  if (!_uvaCache) return; // todavía cargando
+  const uvaInicio = _uvaCache.valor;
+  const cantidadUVAs = parseFloat((M / uvaInicio).toFixed(6));
+  const tna = localConfig.tasaPFUVA || 1;
+  const fechaVenc = fmtDate(addMonths(today(), n));
+  simEl.style.display = '';
+  document.getElementById('pf-uva-sim-uva-inicio').textContent = fmtARS(uvaInicio) + ' (al ' + _uvaCache.fecha + ')';
+  document.getElementById('pf-uva-sim-uvas').textContent = cantidadUVAs.toLocaleString('es-AR', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' UVAs';
+  document.getElementById('pf-uva-sim-tna').textContent = tna + '% TNA';
+  document.getElementById('pf-uva-sim-fecha').textContent = fechaVenc;
+}
+
+// Constituir el plazo fijo UVA
+async function doConstituirPlazoUVA() {
+  const M = parseFloat(document.getElementById('pf-uva-monto').value);
+  const n = parseInt(document.getElementById('pf-uva-plazo').value);
+  const err = document.getElementById('pf-uva-error'); err.classList.remove('show');
+
+  if (!M || M <= 0)        { err.textContent = 'Ingresá un monto válido.'; err.classList.add('show'); return; }
+  if (!n || n < 3 || n > 12) { err.textContent = 'El plazo debe ser entre 3 y 12 meses.'; err.classList.add('show'); return; }
+
+  const cuentaOrigen = document.getElementById('pf-uva-cuenta').value;
+  const balOrigen = cuentaOrigen === 'ca' ? (currentUser.balanceCajaAhorro || 0) : (currentUser.balance || 0);
+  if (M > balOrigen) {
+    err.textContent = 'Saldo insuficiente en ' + (cuentaOrigen === 'ca' ? 'caja de ahorro' : 'cuenta corriente') + '.';
+    err.classList.add('show'); return;
+  }
+
+  setLoading('btn-confirmar-uva', true);
+  try {
+    if (!_uvaCache) await fetchUVAActual();
+  } catch(e) {
+    err.textContent = 'No se pudo obtener el valor UVA. Intentá de nuevo.';
+    err.classList.add('show'); setLoading('btn-confirmar-uva', false); return;
+  }
+
+  const uvaInicio     = _uvaCache.valor;
+  const fechaUVA      = _uvaCache.fecha;
+  const cantidadUVAs  = parseFloat((M / uvaInicio).toFixed(6));
+  const tna           = localConfig.tasaPFUVA || 1;
+  const d             = todayStr();
+  const fechaVenc     = fmtDate(addMonths(today(), n));
+  const txId          = (currentUser.txCounter || 200) + 1;
+
+  const nuevoPlazo = {
+    id: txId,
+    tipo: 'uva',
+    capitalARS: M,
+    cantidadUVAs,
+    uvaInicio,
+    fechaUVA,
+    meses: n,
+    tna,
+    fechaInicio: d,
+    fechaVenc,
+    acreditado: false,
+    cuentaOrigen,
+  };
+
+  const cuentaLabel = cuentaOrigen === 'ca' ? ' (desde Caja Ahorro)' : '';
+  const upd = { txCounter: txId, plazosUVA: firebase.firestore.FieldValue.arrayUnion(nuevoPlazo) };
+
+  if (cuentaOrigen === 'ca') {
+    upd.balanceCajaAhorro = parseFloat(((currentUser.balanceCajaAhorro || 0) - M).toFixed(2));
+    upd.txCajaAhorro = firebase.firestore.FieldValue.arrayUnion({
+      id: txId, type: 'debit',
+      desc: 'Constitución plazo fijo UVA – ' + n + ' meses · ' + cantidadUVAs.toLocaleString('es-AR', { minimumFractionDigits: 4 }) + ' UVAs al ' + fmtARS(uvaInicio),
+      amount: M, date: d,
+    });
+  } else {
+    upd.balance = parseFloat(((currentUser.balance || 0) - M).toFixed(2));
+    upd.transactions = firebase.firestore.FieldValue.arrayUnion({
+      id: txId, type: 'debit',
+      desc: 'Constitución plazo fijo UVA – ' + n + ' meses · ' + cantidadUVAs.toLocaleString('es-AR', { minimumFractionDigits: 4 }) + ' UVAs al ' + fmtARS(uvaInicio),
+      amount: M, date: d,
+    });
+  }
+
+  await db.collection('users').doc(currentUser.id).update(upd);
+  closeModal('new-plazo-uva');
+  document.getElementById('pf-uva-monto').value = '';
+  document.getElementById('pf-uva-plazo').value = '';
+  document.getElementById('pf-uva-sim').style.display = 'none';
+  setLoading('btn-confirmar-uva', false);
+  showNotif('✓ Plazo fijo UVA constituido – ' + cantidadUVAs.toLocaleString('es-AR', { minimumFractionDigits: 4 }) + ' UVAs' + cuentaLabel, 'success');
+}
+
+// Render del listado UVA en la solapa del usuario
+function renderPlazosUVAUser() {
+  const el = document.getElementById('plazos-list-uva');
+  const pfs = currentUser.plazosUVA || [];
+  if (!pfs.length) {
+    el.innerHTML = '<div class="empty-state">No tenés plazos fijos UVA.</div>';
+    return;
+  }
+  el.innerHTML = pfs.map(pf => {
+    const badge = pf.acreditado
+      ? '<span class="producto-badge badge-plazo">✓ Acreditado</span>'
+      : '<span class="producto-badge badge-prestamo">En curso</span>';
+    const uvasStr = Number(pf.cantidadUVAs).toLocaleString('es-AR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    return `<div class="producto-item"><div class="prod-info">
+      <div class="prod-title">Plazo Fijo UVA ${fmtARS(pf.capitalARS)} – ${pf.meses} meses ${badge}</div>
+      <div class="prod-detail">${uvasStr} UVAs · UVA inicio: ${fmtARS(pf.uvaInicio)} · TNA adicional: ${pf.tna}%</div>
+      <div class="prod-detail">Inicio: ${pf.fechaInicio} · Vencimiento: ${pf.fechaVenc}</div>
+      ${pf.acreditado && pf.capitalAcreditadoARS ? '<div class="prod-detail" style="color:var(--green);font-weight:700;">Acreditado: ' + fmtARS(pf.capitalAcreditadoARS) + '</div>' : ''}
+    </div></div>`;
+  }).join('');
+}
+
 function renderAdminProductos() {
   const prs = [];
   allUsers.forEach(u => (u.prestamos || []).filter(p => p.cuotasPagas < p.cuotas).forEach(p => prs.push({ user: u, pr: p })));
@@ -1192,6 +1438,16 @@ function renderAdminProductos() {
         <td>${fmtUSD(pf.interes)}</td><td>${pf.fechaVenc}</td>
       </tr>`).join('')
     : '<tr><td colspan="5" style="text-align:center;padding:1.5rem;color:var(--text3)">No hay plazos fijos USD activos</td></tr>';
+
+  const pfsUVA = [];
+  allUsers.forEach(u => (u.plazosUVA || []).filter(p => !p.acreditado).forEach(p => pfsUVA.push({ user: u, pf: p })));
+  document.getElementById('admin-plazos-uva-body').innerHTML = pfsUVA.length
+    ? pfsUVA.map(({ user, pf }) => `<tr>
+        <td>${user.name}</td><td>${fmtARS(pf.capitalARS)}</td>
+        <td>${Number(pf.cantidadUVAs).toLocaleString('es-AR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</td>
+        <td>${fmtARS(pf.uvaInicio)}</td><td>${pf.tna}% TNA</td><td>${pf.fechaVenc}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="6" style="text-align:center;padding:1.5rem;color:var(--text3)">No hay plazos fijos UVA activos</td></tr>';
 }
  
 function renderAdminDivisas() {
@@ -1225,6 +1481,7 @@ function renderAdminTx() {
 function loadConfigUI() {
   document.getElementById('cfg-tasa-pf').value = localConfig.tasaPF;
   document.getElementById('cfg-tasa-pf-usd').value = localConfig.tasaPFUSD || 2;
+  document.getElementById('cfg-tasa-pf-uva').value = localConfig.tasaPFUVA || 1;
   document.getElementById('cfg-tasa-pr').value = localConfig.tasaPR;
   document.getElementById('cfg-tasa-mora').value = localConfig.tasaMora;
   document.getElementById('cfg-tasa-desc').value = localConfig.tasaDescubierto || 50;
@@ -1238,6 +1495,7 @@ function loadConfigUI() {
 async function saveConfig() {
   const pf    = parseFloat(document.getElementById('cfg-tasa-pf').value);
   const pfusd = parseFloat(document.getElementById('cfg-tasa-pf-usd').value);
+  const pfuva = parseFloat(document.getElementById('cfg-tasa-pf-uva').value);
   const pr   = parseFloat(document.getElementById('cfg-tasa-pr').value);
   const mora = parseFloat(document.getElementById('cfg-tasa-mora').value);
   const desc = parseFloat(document.getElementById('cfg-tasa-desc').value);
@@ -1246,10 +1504,10 @@ async function saveConfig() {
   const tcv     = parseFloat(document.getElementById('cfg-tc-venta').value);
   const topeDep = parseFloat(document.getElementById('cfg-tope-dep').value);
   const saldoMax = parseFloat(document.getElementById('cfg-saldo-max').value);
-  if ([pf, pfusd, pr, mora, desc, ca, tcc, tcv, topeDep, saldoMax].some(v => isNaN(v) || v < 0)) { showNotif('Verificá que todos los valores sean válidos.', 'error'); return; }
+  if ([pf, pfusd, pfuva, pr, mora, desc, ca, tcc, tcv, topeDep, saldoMax].some(v => isNaN(v) || v < 0)) { showNotif('Verificá que todos los valores sean válidos.', 'error'); return; }
   if (tcc >= tcv) { showNotif('El TC comprador debe ser menor al TC vendedor.', 'error'); return; }
   if (topeDep > saldoMax) { showNotif('El tope por depósito no puede superar el saldo máximo.', 'error'); return; }
-  const newConfig = { tasaPF: pf, tasaPFUSD: pfusd, tasaPR: pr, tasaMora: mora, tasaDescubierto: desc, tasaCA: ca, tcCompra: tcc, tcVenta: tcv, topeDeposito: topeDep, saldoMaxARS: saldoMax };
+  const newConfig = { tasaPF: pf, tasaPFUSD: pfusd, tasaPFUVA: pfuva, tasaPR: pr, tasaMora: mora, tasaDescubierto: desc, tasaCA: ca, tcCompra: tcc, tcVenta: tcv, topeDeposito: topeDep, saldoMaxARS: saldoMax };
   await db.collection('config').doc('global').set(newConfig);
   localConfig = newConfig;
   updateFXLabels();
