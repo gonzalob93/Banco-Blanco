@@ -560,6 +560,7 @@
       <button class="nav-tab" onclick="adminTab('productos')">Préstamos y Plazos</button>
       <button class="nav-tab" onclick="adminTab('divisas')">Divisas</button>
       <button class="nav-tab" onclick="adminTab('transactions')">Transacciones</button>
+      <button class="nav-tab" onclick="adminTab('cheques')">Cheques</button>
       <button class="nav-tab" onclick="adminTab('config')">Tasas y TC</button>
     </div>
     <div class="admin-content">
@@ -615,6 +616,22 @@
       <div id="apanel-transactions" style="display:none">
         <div class="users-table"><div class="table-header"><span class="section-title" style="margin:0">TODAS LAS TRANSACCIONES</span></div><div id="admin-tx-list"></div></div>
       </div>
+      <div id="apanel-cheques" style="display:none">
+        <div class="users-table">
+          <div class="table-header"><span class="section-title" style="margin:0">CHEQUES EN DESCUENTO — PENDIENTES DE REVISIÓN</span></div>
+          <table class="admin-table">
+            <thead><tr><th>NRO</th><th>BENEFICIARIO</th><th>EMISOR</th><th>MONTO</th><th>VENCE</th><th>DÍAS</th><th>DESCUENTO</th><th>NETO A ACREDITAR</th><th>ACCIÓN</th></tr></thead>
+            <tbody id="admin-cheques-descuento-body"></tbody>
+          </table>
+        </div>
+        <div class="users-table" style="margin-top:1rem;">
+          <div class="table-header"><span class="section-title" style="margin:0">CARTERA DE CHEQUES ACEPTADOS</span></div>
+          <table class="admin-table">
+            <thead><tr><th>NRO</th><th>BENEFICIARIO</th><th>EMISOR</th><th>MONTO</th><th>VENCE</th><th>ESTADO</th><th>ACCIÓN</th></tr></thead>
+            <tbody id="admin-cartera-body"></tbody>
+          </table>
+        </div>
+      </div>
       <div id="apanel-config" style="display:none">
         <div class="users-table">
           <div class="table-header"><span class="section-title" style="margin:0">TASAS Y TIPO DE CAMBIO</span></div>
@@ -627,6 +644,7 @@
             <div class="tasa-row"><label>Mora mensual</label><input type="number" id="cfg-tasa-mora" step="0.1" min="0"/><span class="unit">%</span></div>
             <div class="tasa-row"><label>Descubierto cuenta corriente (TNA)</label><input type="number" id="cfg-tasa-desc" step="0.1" min="0"/><span class="unit">%</span></div>
             <div class="tasa-row"><label>Caja de ahorro ARS (TNA)</label><input type="number" id="cfg-tasa-ca" step="0.1" min="0"/><span class="unit">%</span></div>
+            <div class="tasa-row"><label>Descuento de cheques (TNA)</label><input type="number" id="cfg-tasa-descuento-ch" step="0.1" min="0"/><span class="unit">%</span></div>
             <p style="font-size:11px;color:var(--text3);margin-bottom:1rem;">Los cambios aplican a nuevos productos solamente.</p>
             <div class="section-divider"></div>
             <p style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:1.5px;margin:1rem 0 .75rem;">TIPO DE CAMBIO (ARS por USD)</p>
@@ -789,6 +807,25 @@
     </div>
     <div id="ch-error" class="error-msg"></div>
     <button class="btn-primary" id="btn-emitir-cheque" onclick="emitirCheque()">EMITIR CHEQUE</button>
+  </div></div>
+
+  <!-- MODAL DESCUENTO DE CHEQUE -->
+  <div class="modal-overlay" id="modal-descuento-cheque"><div class="modal">
+    <div class="modal-header"><span class="modal-title">Descontar cheque</span><button class="modal-close" onclick="closeModal('descuento-cheque')">✕</button></div>
+    <div class="fx-info-box" style="background:var(--amber-bg);color:var(--amber);border:1px solid #fcd34d;">
+      <strong>Descuento comercial (tasa adelantada)</strong>
+      El banco adelanta los fondos hoy deduciendo un interés sobre el valor nominal del cheque. El cheque pasa a poder del banco hasta su vencimiento.
+    </div>
+    <div class="simulacion-box" id="desc-ch-sim" style="margin-top:1rem;">
+      <div class="sim-row"><span class="sim-label">Valor nominal del cheque</span><span class="sim-value" id="desc-ch-nominal"></span></div>
+      <div class="sim-row"><span class="sim-label">Días hasta el vencimiento</span><span class="sim-value" id="desc-ch-dias"></span></div>
+      <div class="sim-row"><span class="sim-label">Tasa TNA (adelantada)</span><span class="sim-value" id="desc-ch-tna"></span></div>
+      <div class="sim-row"><span class="sim-label">Descuento (interés)</span><span class="sim-value" id="desc-ch-interes" style="color:var(--red);"></span></div>
+      <div class="sim-row" style="border-top:1px solid var(--gray2);padding-top:8px;margin-top:4px;"><span class="sim-label" style="font-weight:700;">Neto a recibir hoy</span><span class="sim-value" id="desc-ch-neto" style="font-size:16px;font-weight:700;color:var(--green);"></span></div>
+    </div>
+    <input type="hidden" id="desc-ch-nro"/>
+    <div id="desc-ch-error" class="error-msg"></div>
+    <button class="btn-primary" style="background:var(--amber);margin-top:1rem;" id="btn-confirmar-descuento" onclick="confirmarDescuento()">SOLICITAR DESCUENTO</button>
   </div></div>
 
   <!-- MODAL TRANSFERENCIA AL EXTERIOR -->
