@@ -103,7 +103,7 @@ async function ensureConfig() {
   const ref = db.collection('config').doc('global');
   const snap = await ref.get();
   if (!snap.exists) {
-    const defaults = { tasaPF: 10, tasaPFUSD: 2, tasaPFUVA: 1, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tasaCA: 4, tcCompra: 1370, tcVenta: 1400, topeDeposito: 1000000, saldoMaxARS: 50000000 };
+    const defaults = { tasaPF: 10, tasaPFUSD: 2, tasaPFUVA: 1, tasaPR: 15, tasaMora: 5, tasaDescubierto: 50, tasaCA: 4, tasaDescuentoCh: 50, tcCompra: 1370, tcVenta: 1400, topeDeposito: 1000000, saldoMaxARS: 50000000 };
     await ref.set(defaults);
     localConfig = defaults;
   } else {
@@ -1066,14 +1066,15 @@ async function renderAdmin() {
 }
  
 function adminTab(tab) {
-  const tabs = ['users', 'productos', 'divisas', 'transactions', 'config'];
+  const tabs = ['users', 'productos', 'divisas', 'transactions', 'cheques', 'config'];
   document.querySelectorAll('.nav-tab').forEach((t, i) => t.classList.toggle('active', tabs[i] === tab));
   tabs.forEach(t => document.getElementById('apanel-' + t).style.display = t === tab ? '' : 'none');
-  if (tab === 'productos') renderAdminProductos();
-  if (tab === 'divisas') renderAdminDivisas();
+  if (tab === 'productos')   renderAdminProductos();
+  if (tab === 'divisas')     renderAdminDivisas();
   if (tab === 'transactions') renderAdminTx();
-  if (tab === 'config') loadConfigUI();
-  if (tab === 'users') renderAdmin();
+  if (tab === 'cheques')     renderAdminCheques();
+  if (tab === 'config')      loadConfigUI();
+  if (tab === 'users')       renderAdmin();
 }
  
 function renderAdminStats() {
@@ -1481,6 +1482,7 @@ function loadConfigUI() {
   document.getElementById('cfg-tasa-pf').value = localConfig.tasaPF;
   document.getElementById('cfg-tasa-pf-usd').value = localConfig.tasaPFUSD || 2;
   document.getElementById('cfg-tasa-pf-uva').value = localConfig.tasaPFUVA || 1;
+  document.getElementById('cfg-tasa-descuento-ch').value = localConfig.tasaDescuentoCh || 50;
   document.getElementById('cfg-tasa-pr').value = localConfig.tasaPR;
   document.getElementById('cfg-tasa-mora').value = localConfig.tasaMora;
   document.getElementById('cfg-tasa-desc').value = localConfig.tasaDescubierto || 50;
@@ -1495,18 +1497,19 @@ async function saveConfig() {
   const pf    = parseFloat(document.getElementById('cfg-tasa-pf').value);
   const pfusd = parseFloat(document.getElementById('cfg-tasa-pf-usd').value);
   const pfuva = parseFloat(document.getElementById('cfg-tasa-pf-uva').value);
-  const pr   = parseFloat(document.getElementById('cfg-tasa-pr').value);
-  const mora = parseFloat(document.getElementById('cfg-tasa-mora').value);
-  const desc = parseFloat(document.getElementById('cfg-tasa-desc').value);
-  const ca   = parseFloat(document.getElementById('cfg-tasa-ca').value);
+  const pr    = parseFloat(document.getElementById('cfg-tasa-pr').value);
+  const mora  = parseFloat(document.getElementById('cfg-tasa-mora').value);
+  const desc  = parseFloat(document.getElementById('cfg-tasa-desc').value);
+  const ca    = parseFloat(document.getElementById('cfg-tasa-ca').value);
+  const descCh = parseFloat(document.getElementById('cfg-tasa-descuento-ch').value);
   const tcc     = parseFloat(document.getElementById('cfg-tc-compra').value);
   const tcv     = parseFloat(document.getElementById('cfg-tc-venta').value);
   const topeDep = parseFloat(document.getElementById('cfg-tope-dep').value);
   const saldoMax = parseFloat(document.getElementById('cfg-saldo-max').value);
-  if ([pf, pfusd, pfuva, pr, mora, desc, ca, tcc, tcv, topeDep, saldoMax].some(v => isNaN(v) || v < 0)) { showNotif('Verificá que todos los valores sean válidos.', 'error'); return; }
+  if ([pf, pfusd, pfuva, pr, mora, desc, ca, descCh, tcc, tcv, topeDep, saldoMax].some(v => isNaN(v) || v < 0)) { showNotif('Verificá que todos los valores sean válidos.', 'error'); return; }
   if (tcc >= tcv) { showNotif('El TC comprador debe ser menor al TC vendedor.', 'error'); return; }
   if (topeDep > saldoMax) { showNotif('El tope por depósito no puede superar el saldo máximo.', 'error'); return; }
-  const newConfig = { tasaPF: pf, tasaPFUSD: pfusd, tasaPFUVA: pfuva, tasaPR: pr, tasaMora: mora, tasaDescubierto: desc, tasaCA: ca, tcCompra: tcc, tcVenta: tcv, topeDeposito: topeDep, saldoMaxARS: saldoMax };
+  const newConfig = { tasaPF: pf, tasaPFUSD: pfusd, tasaPFUVA: pfuva, tasaPR: pr, tasaMora: mora, tasaDescubierto: desc, tasaCA: ca, tasaDescuentoCh: descCh, tcCompra: tcc, tcVenta: tcv, topeDeposito: topeDep, saldoMaxARS: saldoMax };
   await db.collection('config').doc('global').set(newConfig);
   localConfig = newConfig;
   updateFXLabels();
@@ -2128,15 +2131,23 @@ function renderChequesUser() {
       const fechaPagoDate = dateFromStr(ch.fechaPago);
       const puedeDepositar = ch.estado === 'pendiente' && fechaPagoDate <= now;
       const noDisponibleAun = ch.estado === 'pendiente' && fechaPagoDate > now;
+      // Puede descontar si es pendiente, diferido, y no rechazado por descuento previo
+      const diasHastaVenc = Math.ceil((fechaPagoDate - now) / 86400000);
+      const puedeDescontar = ch.estado === 'pendiente' && fechaPagoDate > now && diasHastaVenc > 0;
       return `<div class="producto-item" style="align-items:flex-start;flex-direction:column;gap:8px;">
         <div class="prod-info">
           <div class="prod-title">Cheque Nº ${ch.nro} — ${fmtARS(ch.monto)} ${badge}</div>
           <div class="prod-detail">De: <strong>${ch.emisor}</strong> · Emitido: ${ch.fechaEmision}${esDiferido ? ' · Disponible desde: <strong>' + ch.fechaPago + '</strong>' : ''}</div>
           ${ch.estado === 'rechazado' ? '<div class="prod-detail" style="color:var(--red)">Rechazado por falta de fondos del emisor</div>' : ''}
           ${ch.estado === 'vencido' ? '<div class="prod-detail" style="color:var(--text3)">Venció sin ser depositado (30 días)</div>' : ''}
-          ${noDisponibleAun ? '<div class="prod-detail" style="color:var(--amber)">Cheque diferido — disponible el ' + ch.fechaPago + '</div>' : ''}
+          ${ch.estado === 'descuento_rechazado' ? '<div class="prod-detail" style="color:var(--red)">El banco rechazó el descuento — aguardá al vencimiento para depositarlo</div>' : ''}
+          ${ch.estado === 'en_descuento' ? '<div class="prod-detail" style="color:var(--amber)">Solicitud de descuento en revisión por el banco</div>' : ''}
+          ${noDisponibleAun && ch.estado === 'pendiente' ? '<div class="prod-detail" style="color:var(--amber)">Cheque diferido — disponible el ' + ch.fechaPago + '</div>' : ''}
         </div>
-        ${puedeDepositar ? `<button class="btn-sm btn-add" style="font-size:12px;padding:6px 14px;" onclick="depositarCheque('${ch.nro}')">Depositar</button>` : ''}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${puedeDepositar ? `<button class="btn-sm btn-add" style="font-size:12px;padding:6px 14px;" onclick="depositarCheque('${ch.nro}')">Depositar</button>` : ''}
+          ${puedeDescontar ? `<button class="btn-sm" style="font-size:12px;padding:6px 14px;background:var(--amber-bg);color:var(--amber);border:1px solid #fcd34d;border-radius:8px;cursor:pointer;" onclick="abrirDescuentoCheque('${ch.nro}')">Descontar</button>` : ''}
+        </div>
       </div>`;
     }).join('');
   }
@@ -2144,10 +2155,12 @@ function renderChequesUser() {
 
 function badgeCheque(estado) {
   const map = {
-    pendiente:  '<span class="producto-badge badge-prestamo">Pendiente</span>',
-    cobrado:    '<span class="producto-badge badge-plazo">✓ Cobrado</span>',
-    rechazado:  '<span class="producto-badge badge-vencido">✕ Rechazado</span>',
-    vencido:    '<span class="producto-badge" style="background:var(--gray2);color:var(--text3)">Vencido</span>',
+    pendiente:          '<span class="producto-badge badge-prestamo">Pendiente</span>',
+    cobrado:            '<span class="producto-badge badge-plazo">✓ Cobrado</span>',
+    rechazado:          '<span class="producto-badge badge-vencido">✕ Rechazado</span>',
+    vencido:            '<span class="producto-badge" style="background:var(--gray2);color:var(--text3)">Vencido</span>',
+    en_descuento:       '<span class="producto-badge" style="background:var(--amber-bg);color:var(--amber);">En descuento</span>',
+    descuento_rechazado:'<span class="producto-badge badge-vencido">Descuento rechazado</span>',
   };
   return map[estado] || '';
 }
@@ -2283,6 +2296,244 @@ async function depositarCheque(nro) {
 
     showNotif('✕ Cheque Nº ' + nro + ' rechazado — fondos insuficientes del emisor', 'error');
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MÓDULO DESCUENTO DE CHEQUES
+// ════════════════════════════════════════════════════════════════
+
+// Abre el modal de descuento precargando la simulación
+function abrirDescuentoCheque(nro) {
+  const cheque = (currentUser.chequesRecibidos || []).find(ch => ch.nro === nro);
+  if (!cheque) return;
+
+  const fechaPago = dateFromStr(cheque.fechaPago);
+  const now = today(); now.setHours(0, 0, 0, 0);
+  const dias = Math.ceil((fechaPago - now) / 86400000);
+  const tna = localConfig.tasaDescuentoCh || 50;
+
+  // Descuento comercial (tasa adelantada): D = Cn × d × n
+  const d = tna / 100 * dias / 365;
+  const descuento = parseFloat((cheque.monto * d).toFixed(2));
+  const neto = parseFloat((cheque.monto - descuento).toFixed(2));
+
+  document.getElementById('desc-ch-nro').value = nro;
+  document.getElementById('desc-ch-nominal').textContent = fmtARS(cheque.monto);
+  document.getElementById('desc-ch-dias').textContent = dias + ' días';
+  document.getElementById('desc-ch-tna').textContent = tna + '% TNA';
+  document.getElementById('desc-ch-interes').textContent = '− ' + fmtARS(descuento);
+  document.getElementById('desc-ch-neto').textContent = fmtARS(neto);
+  document.getElementById('desc-ch-error').classList.remove('show');
+
+  openModal('descuento-cheque');
+}
+
+// Confirma la solicitud de descuento — cambia estado y crea doc en admin/chequesDescuento
+async function confirmarDescuento() {
+  const nro = document.getElementById('desc-ch-nro').value;
+  const err = document.getElementById('desc-ch-error'); err.classList.remove('show');
+  const cheque = (currentUser.chequesRecibidos || []).find(ch => ch.nro === nro);
+  if (!cheque || cheque.estado !== 'pendiente') {
+    err.textContent = 'Cheque no disponible para descuento.'; err.classList.add('show'); return;
+  }
+
+  const fechaPago = dateFromStr(cheque.fechaPago);
+  const now = today(); now.setHours(0, 0, 0, 0);
+  const dias = Math.ceil((fechaPago - now) / 86400000);
+  const tna = localConfig.tasaDescuentoCh || 50;
+  const descuento = parseFloat((cheque.monto * (tna / 100) * (dias / 365)).toFixed(2));
+  const neto = parseFloat((cheque.monto - descuento).toFixed(2));
+
+  setLoading('btn-confirmar-descuento', true);
+  try {
+    // Actualizar estado del cheque en el receptor
+    const recibidosActualizados = (currentUser.chequesRecibidos || []).map(ch =>
+      ch.nro === nro ? { ...ch, estado: 'en_descuento' } : ch
+    );
+
+    // Crear documento en colección admin para revisión
+    const docDescuento = {
+      nro,
+      beneficiarioId: currentUser.id,
+      beneficiarioNombre: currentUser.name,
+      emisorId: cheque.emisor,
+      monto: cheque.monto,
+      fechaEmision: cheque.fechaEmision,
+      fechaPago: cheque.fechaPago,
+      dias,
+      tna,
+      descuento,
+      neto,
+      fechaSolicitud: todayStr(),
+      estado: 'pendiente', // pendiente | aceptado | rechazado
+    };
+
+    const batch = db.batch();
+    batch.update(db.collection('users').doc(currentUser.id), {
+      chequesRecibidos: recibidosActualizados,
+    });
+    batch.set(db.collection('chequesDescuento').doc(nro), docDescuento);
+    await batch.commit();
+
+    closeModal('descuento-cheque');
+    showNotif('✓ Solicitud de descuento enviada al banco — Cheque Nº ' + nro, 'info');
+  } catch(e) {
+    err.textContent = 'Error al procesar. Intentá de nuevo.'; err.classList.add('show');
+    console.error(e);
+  }
+  setLoading('btn-confirmar-descuento', false);
+}
+
+// ── PANEL ADMIN — CHEQUES EN DESCUENTO ───────────────────────────
+
+async function renderAdminCheques() {
+  const snap = await db.collection('chequesDescuento').get();
+  const todos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const pendientes = todos.filter(c => c.estado === 'pendiente');
+  const cartera    = todos.filter(c => c.estado === 'aceptado');
+
+  // ── Pendientes de revisión ──
+  const bodyPend = document.getElementById('admin-cheques-descuento-body');
+  bodyPend.innerHTML = pendientes.length
+    ? pendientes.map(c => `<tr>
+        <td>${c.nro}</td>
+        <td>${c.beneficiarioNombre} <span style="font-size:11px;color:var(--text3)">(@${c.beneficiarioId})</span></td>
+        <td>${c.emisorId}</td>
+        <td>${fmtARS(c.monto)}</td>
+        <td>${c.fechaPago}</td>
+        <td>${c.dias} días</td>
+        <td style="color:var(--red);">− ${fmtARS(c.descuento)}</td>
+        <td style="color:var(--green);font-weight:700;">${fmtARS(c.neto)}</td>
+        <td style="display:flex;gap:6px;">
+          <button class="btn-sm btn-add" style="font-size:11px;padding:4px 10px;" onclick="adminAceptarDescuento('${c.nro}')">Aceptar</button>
+          <button class="btn-sm btn-del" style="font-size:11px;padding:4px 10px;" onclick="adminRechazarDescuento('${c.nro}')">Rechazar</button>
+        </td>
+      </tr>`).join('')
+    : '<tr><td colspan="9" style="text-align:center;padding:1.5rem;color:var(--text3)">No hay solicitudes pendientes</td></tr>';
+
+  // ── Cartera propia (aceptados) ──
+  const bodyCart = document.getElementById('admin-cartera-body');
+  bodyCart.innerHTML = cartera.length
+    ? cartera.map(c => {
+        const now = today(); now.setHours(0,0,0,0);
+        const fechaPagoDate = dateFromStr(c.fechaPago);
+        const puedeCobrar = !c.cobrado && fechaPagoDate <= now;
+        const badge = c.cobrado
+          ? '<span class="producto-badge badge-plazo">✓ Cobrado</span>'
+          : puedeCobrar
+            ? '<span class="producto-badge badge-prestamo">Disponible</span>'
+            : '<span class="producto-badge" style="background:var(--amber-bg);color:var(--amber);">En cartera</span>';
+        return `<tr>
+          <td>${c.nro}</td>
+          <td>${c.beneficiarioNombre}</td>
+          <td>${c.emisorId}</td>
+          <td>${fmtARS(c.monto)}</td>
+          <td>${c.fechaPago}</td>
+          <td>${badge}</td>
+          <td>${puedeCobrar ? `<button class="btn-sm btn-add" style="font-size:11px;padding:4px 10px;" onclick="adminCobrarChequeDescontado('${c.nro}')">Cobrar</button>` : '—'}</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="7" style="text-align:center;padding:1.5rem;color:var(--text3)">Sin cheques en cartera</td></tr>';
+}
+
+async function adminAceptarDescuento(nro) {
+  const snap = await db.collection('chequesDescuento').doc(nro).get();
+  if (!snap.exists) { showNotif('Cheque no encontrado.', 'error'); return; }
+  const c = snap.data();
+
+  // Acreditar el neto en la cuenta del beneficiario
+  const userSnap = await db.collection('users').doc(c.beneficiarioId).get();
+  const user = userSnap.data();
+  const txId = Date.now();
+  const nuevoBalance = parseFloat(((user.balance || 0) + c.neto).toFixed(2));
+
+  // Actualizar cheque en recibidos del beneficiario
+  const recibidosActualizados = (user.chequesRecibidos || []).map(ch =>
+    ch.nro === nro ? { ...ch, estado: 'cobrado' } : ch
+  );
+
+  const batch = db.batch();
+  batch.update(db.collection('users').doc(c.beneficiarioId), {
+    balance: nuevoBalance,
+    chequesRecibidos: recibidosActualizados,
+    transactions: firebase.firestore.FieldValue.arrayUnion({
+      id: txId, type: 'credit',
+      desc: `Descuento cheque Nº ${nro} — neto acreditado (descuento: ${fmtARS(c.descuento)})`,
+      amount: c.neto, date: todayStr(),
+    }),
+  });
+  batch.update(db.collection('chequesDescuento').doc(nro), { estado: 'aceptado' });
+  await batch.commit();
+
+  showNotif('✓ Descuento aceptado — ' + fmtARS(c.neto) + ' acreditados a ' + c.beneficiarioNombre);
+  await renderAdminCheques();
+}
+
+async function adminRechazarDescuento(nro) {
+  const snap = await db.collection('chequesDescuento').doc(nro).get();
+  if (!snap.exists) { showNotif('Cheque no encontrado.', 'error'); return; }
+  const c = snap.data();
+
+  // Devolver el cheque al beneficiario con estado descuento_rechazado
+  const userSnap = await db.collection('users').doc(c.beneficiarioId).get();
+  const user = userSnap.data();
+  const recibidosActualizados = (user.chequesRecibidos || []).map(ch =>
+    ch.nro === nro ? { ...ch, estado: 'descuento_rechazado' } : ch
+  );
+
+  const batch = db.batch();
+  batch.update(db.collection('users').doc(c.beneficiarioId), {
+    chequesRecibidos: recibidosActualizados,
+  });
+  batch.update(db.collection('chequesDescuento').doc(nro), { estado: 'rechazado' });
+  await batch.commit();
+
+  showNotif('Descuento Nº ' + nro + ' rechazado — cheque devuelto al beneficiario.', 'warn');
+  await renderAdminCheques();
+}
+
+async function adminCobrarChequeDescontado(nro) {
+  const snap = await db.collection('chequesDescuento').doc(nro).get();
+  if (!snap.exists) { showNotif('Cheque no encontrado.', 'error'); return; }
+  const c = snap.data();
+
+  // Debitar del emisor original
+  const emisorSnap = await db.collection('users').doc(c.emisorId).get();
+  if (!emisorSnap.exists) { showNotif('No se encontró la cuenta del emisor.', 'error'); return; }
+  const emisor = emisorSnap.data();
+  const limDesc = (emisor.limiteDescubierto != null) ? emisor.limiteDescubierto : 50000;
+  const disponible = (emisor.balance || 0) + limDesc;
+
+  if (disponible < c.monto) {
+    showNotif('El emisor no tiene fondos suficientes para cubrir el cheque.', 'error'); return;
+  }
+
+  const nuevoBalEmisor = parseFloat(((emisor.balance || 0) - c.monto).toFixed(2));
+  const txId = Date.now();
+  const updEmisor = {
+    balance: nuevoBalEmisor,
+    transactions: firebase.firestore.FieldValue.arrayUnion({
+      id: txId, type: 'debit',
+      desc: `Cheque Nº ${nro} cobrado por el banco (descuento)`,
+      amount: c.monto, date: todayStr(),
+    }),
+  };
+  // Actualizar estado del cheque en emitidos del emisor
+  const emitidosActualizados = (emisor.chequesEmitidos || []).map(ch =>
+    ch.nro === nro ? { ...ch, estado: 'cobrado' } : ch
+  );
+  updEmisor.chequesEmitidos = emitidosActualizados;
+  if (nuevoBalEmisor < 0 && !(emisor.descubierto && emisor.descubierto.fechaInicio)) updEmisor.descubierto = { fechaInicio: todayStr() };
+  if (nuevoBalEmisor >= 0) updEmisor.descubierto = null;
+
+  const batch = db.batch();
+  batch.update(db.collection('users').doc(c.emisorId), updEmisor);
+  batch.update(db.collection('chequesDescuento').doc(nro), { cobrado: true });
+  await batch.commit();
+
+  showNotif('✓ Cheque Nº ' + nro + ' cobrado — ' + fmtARS(c.monto) + ' debitados de ' + c.emisorId);
+  await renderAdminCheques();
 }
 
 // ════════════════════════════════════════════════════════════════
